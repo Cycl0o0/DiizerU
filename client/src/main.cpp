@@ -49,7 +49,7 @@ void fill(SDL_Renderer* r, SDL_Color c, int x, int y, int w, int h) {
 // decode/data problem); a short high-pitched chirp == the backend/governor is
 // playing faster than real time. Gated on the file sd:/diizeru/selftest.
 void run_audio_selftest(audio::SdlAudioBackend& b, int rate) {
-    const int secs = 3;
+    const int secs = 5;
     std::vector<uint8_t> buf;
     buf.reserve((size_t)rate * secs * 4);
     for (int i = 0; i < rate * secs; ++i) {
@@ -64,7 +64,20 @@ void run_audio_selftest(audio::SdlAudioBackend& b, int rate) {
     b.clear();
     b.pause(false);
     b.queue(buf.data(), buf.size());
-    SDL_Delay((Uint32)(secs + 1) * 1000);
+
+    // Log the drain curve: queued seconds over wall-clock time. The slope is the
+    // real consumption rate. 3.0s -> 0 over ~3s == real time; over ~1s == 3x fast.
+    FILE* log = nullptr;
+#ifdef __WIIU__
+    log = std::fopen("fs:/vol/external01/diizeru/audio_drain.txt", "w");
+#endif
+    if (log) std::fprintf(log, "queued %d s tone @%dHz; poll 100ms\nms\tqueued_s\n", secs, rate);
+    for (int t = 0; t <= 60; ++t) { // 6s window
+        size_t q = b.queued_bytes();
+        if (log) std::fprintf(log, "%d\t%.2f\n", t * 100, (double)q / ((double)rate * 4.0));
+        SDL_Delay(100);
+    }
+    if (log) std::fclose(log);
     b.clear();
     std::printf("[selftest] done\n");
 }
@@ -150,7 +163,7 @@ int main(int /*argc*/, char** /*argv*/) {
     audio::SdlAudioBackend backend;
     audio::AudioFormat afmt;
     afmt.sample_rate = native ? 44100 : 22050;
-    afmt.prebuffer_ms = native ? 500 : 1000;
+    afmt.prebuffer_ms = native ? 3000 : 1000;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;

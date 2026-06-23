@@ -12,7 +12,6 @@
 
 #include <SDL2/SDL.h>
 
-#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -57,17 +56,6 @@ private:
     size_t avail_ = 0;      // bytes available to play
     size_t prebuffer_ = 0;  // bytes to accumulate before real output begins
     bool playing_ = false;  // false => callback emits silence until prebuffer met
-
-    // Real-time output governor. The Wii U port pulls buffered audio FASTER than
-    // real time (it burns the ring/AX backlog at startup), which plays the first
-    // seconds sped-up. The callback therefore releases real samples only up to the
-    // wall-clock budget (rate_ frames/sec) and pads any over-pull with silence, so
-    // audio always occupies correct real-time duration no matter how greedily the
-    // port pulls. A deep ring still rides out Wi-Fi jitter.
-    int rate_ = 44100;             // output frames per second
-    size_t credit_frames_ = 2048;  // allow up to ~one period ahead of real time
-    std::chrono::steady_clock::time_point t0_; // playback start (per track)
-    uint64_t out_frames_ = 0;      // real frames released since t0_
 };
 
 } // namespace audio
