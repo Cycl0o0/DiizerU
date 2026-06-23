@@ -1,171 +1,136 @@
-# DiizerU 🎵 — Deezer on the Wii U
+# DiizerU
 
-**DiizerU turns a Wii U into a Deezer music player.** A homebrew app on the
-console talks to a small relay server that streams your own Deezer Premium
-library to the TV — browse, search, play, queue, seek, loop, album art, all from
-the GamePad (buttons **or** touchscreen).
+Deezer on the Wii U. It's a homebrew app for the console plus a little relay
+server that does the heavy lifting, so you can sit on the couch and play your own
+Deezer Premium library straight to the TV — search, playlists, the usual
+transport controls, album art, all driven from the GamePad (sticks/buttons or the
+touchscreen, your call).
 
-> **Private, invite-only beta. Hobby / grey-zone project.** Read the
-> [limitations](#-limitations--legal) before using. You use your **own** Deezer
-> Premium account.
+It started as a "can I even do this" weekend thing and grew. It works on real
+hardware. It's also a grey-zone hobby project, so please read the
+[fine print](#the-fine-print) before diving in.
 
----
+## State of things
 
-## ✨ What works today
+Working right now:
 
-- **Pairing** — show a code on the TV, link from your phone (no password on our pages)
-- **Browse** — your Liked Songs, your Playlists (incl. private), albums
-- **Search** — any track, via an on-screen keyboard (D-pad **or** touch)
-- **Playback** — play / pause (true resume), next / prev, **seek**, **loop** (off / all / one)
-- **Now-playing** — title, artist, **album art**, progress bar
-- **Audio** — relay decodes + re-encodes to a light stream (~22 KB/s) so the
-  console does zero DRM work
-- **Self-hostable** — the relay is a single Rust binary; the central relay is just
-  a deployment choice, not a hard dependency
+- Pairing from your phone (the console shows a code, you finish on the web)
+- Liked songs, your playlists (private ones too), albums
+- Search with an on-screen keyboard — D-pad or just tap the touchscreen
+- Play/pause that actually resumes where it left off, next/prev, seek, repeat (off/all/one)
+- Now-playing with album art and a progress bar
+- Audio gets decoded on the relay and sent to the console as a tiny ADPCM stream,
+  so the Wii U never touches any DRM and the bandwidth is trivial
 
-## 🟣 Why a private beta?
+It's a beta. Rough edges exist. Nothing here is guaranteed to stay up.
 
-1. **Grey zone.** DiizerU plays your own Deezer Premium content but uses the
-   unofficial streaming path (like `deemix`-style tools). This likely sits
-   outside Deezer's Terms of Service. Invite-only keeps it small and personal.
-2. **Your token is sensitive.** Onboarding uses your Deezer **ARL** (a session
-   token). On the central relay we encrypt it at rest and never log it — but you
-   should prefer **self-hosting** so the token never leaves your own machine.
-3. **Hobby reliability.** One small server, bounded concurrent sessions, no SLA.
+## Trying it without hosting anything
 
----
-
-## 🎟️ Join the central beta (1-week public invite)
-
-Want to try it without self-hosting? Use the public invite below — valid for
-**one week (until 2026-06-30)**, multi-use:
+I run a small relay for the beta. There's a public invite that's good for a week
+(until **2026-06-30**) and can be used by more than one person:
 
 ```
-Relay:        https://diizeru.cyclooo.fr
-Invite code:  hEYQPFQbJ0yF
+Relay:   https://diizeru.cyclooo.fr
+Invite:  hEYQPFQbJ0yF
 ```
 
-Steps:
-1. Get a Wii U running **Aroma** (homebrew environment).
-2. Grab `DiizerU.wuhb` from [Releases](../../releases) and copy it to
-   `sd:/wiiu/apps/`. *(Or build it yourself — see below — and put a one-line
-   `relay.cfg` containing `https://diizeru.cyclooo.fr/v1` at
-   `sd:/diizeru/relay.cfg`.)*
-3. Launch DiizerU → it shows a **TV code**.
-4. On your phone open **https://diizeru.cyclooo.fr/v1/pair**, enter the TV code,
-   the invite code, and your **Deezer ARL** (the page explains how to find it).
-5. Done — browse and play on the TV.
+What you need:
 
-> Prefer not to share your ARL with someone else's server? **Self-host** instead. 👇
+- A Wii U with Aroma
+- A Deezer Premium account
 
----
+Then:
 
-## 🏠 Self-host (recommended)
+1. Download `DiizerU.wuhb` from the [Releases](../../releases) page, drop it in
+   `sd:/wiiu/apps/`.
+2. Launch it. You'll get a code on the TV.
+3. On your phone go to <https://diizeru.cyclooo.fr/v1/pair>, type in the TV code,
+   the invite, and your Deezer ARL. The page walks you through finding the ARL —
+   it's a cookie in your browser.
+4. That's it, go listen to music.
 
-Run your own relay so your ARL never leaves your machine. Two parts: the **relay**
-(server) and the **client** (`.wuhb` on the Wii U).
+If handing your ARL to my server makes you uneasy (totally fair), host your own —
+then it never leaves your machine.
 
-### Prerequisites
+## Hosting your own
 
-- A small always-on machine/VPS (Linux) with a domain + ports 80/443, **or** any
-  box on your LAN.
-- **Deezer Premium** account.
-- A Wii U with **Aroma**.
-- To build from source: **Rust** (relay) and **devkitPro + wut + SDL2 portlibs**
-  (client).
+Two pieces: the relay (a single Rust binary) and the client (the `.wuhb`).
 
-### Relay — Docker (easiest)
+You'll want a Linux box — a cheap VPS with a domain, or honestly just something on
+your LAN. Plus Deezer Premium, and the usual toolchains if you're building from
+source (Rust for the relay, devkitPro for the client).
+
+Quickest path is Docker, which also handles TLS via Caddy:
 
 ```sh
-git clone https://github.com/<you>/DiizerU && cd DiizerU/deploy
-cp ../relay/.env.example .env        # then edit .env (see below)
-docker compose up -d --build         # relay + Caddy (auto-TLS for your domain)
+git clone https://github.com/Cycl0o0/DiizerU && cd DiizerU/deploy
+cp ../relay/.env.example .env      # edit it, see below
+docker compose up -d --build
 ```
 
-`.env` essentials:
+The bits of `.env` that matter:
 
 ```ini
-RELAY_MODE=self-hosted               # implicit allowlist = you; no invite needed
+RELAY_MODE=self-hosted             # you're auto-allowlisted, no invite needed
 PUBLIC_BASE_URL=https://your-domain.example
-BIND_ADDR=0.0.0.0:8080
-DIIZERU_MASTER_KEY=...   # head -c32 /dev/urandom | base64  (encrypts your ARL)
-DIIZERU_ADMIN_TOKEN=...  # head -c24 /dev/urandom | base64  (admin API)
+DIIZERU_MASTER_KEY=...             # head -c32 /dev/urandom | base64  -> encrypts your ARL
+DIIZERU_ADMIN_TOKEN=...            # head -c24 /dev/urandom | base64
 ```
 
-Point DNS at the box, bring up the stack, then pair the console against
-`https://your-domain.example/v1/pair`. In `self-hosted` mode you're
-auto-allowlisted (no invite needed). See [`docs/SELF-HOST.md`](docs/SELF-HOST.md)
-for the native (no-Docker) install, running behind an existing nginx, and the
-real-audio build flag (`--features deezer`).
+Point DNS at the box, bring it up, pair against `https://your-domain.example/v1/pair`.
+Full walkthrough (native install, sitting behind an existing nginx, the build
+flags) is in [docs/SELF-HOST.md](docs/SELF-HOST.md).
 
-### Client — build the `.wuhb`
+For the client:
 
 ```sh
 sudo dkp-pacman -S --needed wiiu-sdl2 wiiu-sdl2_ttf wiiu-sdl2_image wiiu-sdl2_mixer
-cd client && make                    # -> DiizerU.wuhb
+cd client && make                  # -> DiizerU.wuhb
 ```
 
-Copy `DiizerU.wuhb` to `sd:/wiiu/apps/`. Set your relay URL by putting it in
-`sd:/diizeru/relay.cfg` (e.g. `https://your-domain.example/v1`), or change the
-default in `client/src/main.cpp` before building.
+Copy it to `sd:/wiiu/apps/`, and tell it where your relay lives by putting the URL
+in `sd:/diizeru/relay.cfg` (e.g. `https://your-domain.example/v1`), or by changing
+the default in `client/src/main.cpp` before you build.
 
----
-
-## 🧭 How it works
+## How it fits together
 
 ```
-Wii U (wut + SDL2)  ──REST/pairing──▶  Relay (Rust, axum)
-        ▲                                   │ ARL login (encrypted at rest)
-        │ ◀── chunked ADPCM audio ──────────┤ Deezer: resolve → download →
-        └────────── control ────────────────┘ Blowfish-decrypt → decode → ADPCM
+Wii U (wut + SDL2) ──pairing/REST──▶ Relay (Rust / axum)
+       ▲                                  │ logs in with your ARL (stored encrypted)
+       │ ◀──── ADPCM audio stream ────────┤ Deezer: resolve → download →
+       └────────── controls ───────────────┘ decrypt → decode → re-encode
 ```
 
-- The console never holds Deezer credentials or does any decryption — it just
-  plays a light PCM/ADPCM stream and renders the UI.
-- The client↔relay API is versioned in [`proto/`](proto) (OpenAPI), so the same
-  client works against the central relay or your self-hosted one — only the URL
-  changes (the `RELAY_MODE` seam).
-- Details: [`ARCHITECTURE.md`](ARCHITECTURE.md) · security & privacy:
-  [`SECURITY.md`](SECURITY.md).
+The console holds no credentials and decrypts nothing — it plays a light stream
+and draws the UI. The client/relay API is versioned in [proto/](proto), so the
+exact same client works against my relay or yours; only the URL changes. More in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
-## 📂 Layout
+## Controls
 
-| Path | What |
-|------|------|
-| [`relay/`](relay) | Rust relay (axum, Deezer source, ADPCM stream) |
-| [`client/`](client) | Wii U homebrew (devkitPro/wut, SDL2) |
-| [`proto/`](proto) | client↔relay API contract (OpenAPI + WS schema) |
-| [`deploy/`](deploy) | Docker Compose + Caddy + scripts |
-| [`docs/`](docs) | self-host guide & notes |
+Sticks/D-pad to move, A opens or plays, B goes back. Y is play/pause, L/R skip
+tracks, D-pad left/right seeks ten seconds, minus cycles the repeat mode, X
+re-links the account. Or ignore all that and poke the touchscreen — keys, rows,
+the scrub bar and play/pause all respond to taps.
 
-## 🎮 Controls
+## Security, briefly
 
-D-pad move · **A** open/play · **B** back · **Y** play/pause · **L/R** prev/next ·
-**(−)** cycle repeat · **D-pad ←/→** seek ∓10s · **X** re-link.
-Or just **tap the GamePad touchscreen** (keys, list rows, scrub bar, play/pause).
+Your ARL is encrypted at rest (XChaCha20-Poly1305, key kept out of the repo) and
+never written to logs. Everything public is over TLS. The admin API sits behind a
+separate token, and there's a kill switch plus per-user revocation. Details in
+[SECURITY.md](SECURITY.md). Still — hosting it yourself is the safest option.
 
-## 🔒 Security & privacy
+## The fine print
 
-- Your **ARL is encrypted at rest** (XChaCha20-Poly1305, key out of the repo) and
-  **never logged**. Self-host to keep it entirely on your machine.
-- TLS on all public endpoints. Admin API behind a separate token. Kill switch +
-  per-user revocation. See [`SECURITY.md`](SECURITY.md).
-- **No DRM is shipped to the console**; decryption of your own entitled content
-  happens server-side. Personal-use tool.
+- It's a beta and a hobby. No SLA, things may break.
+- Your own Deezer Premium account only. No sharing accounts.
+- It reaches Deezer the unofficial way, which almost certainly breaks Deezer's
+  terms for third-party apps. Personal/educational use, your own account, your own
+  risk. You're responsible for what you do with it.
+- Not affiliated with Deezer or Nintendo. The names belong to them.
 
-## ⚠️ Limitations & legal
+## License
 
-- **Beta.** Expect rough edges; no uptime guarantees.
-- **Your own Deezer Premium only.** No account sharing.
-- Uses Deezer's **unofficial** streaming path → likely **against Deezer's ToS for
-  third-party clients**. Use **at your own risk**, for personal/educational
-  purposes, on an account you own. You are responsible for your use.
-- Not affiliated with or endorsed by Deezer or Nintendo. "Deezer", "Wii U" and
-  related marks belong to their respective owners.
-
-## 📝 License
-
-**[GNU AGPL-3.0](LICENSE)** — copyleft, including over a network: if you run a
-modified DiizerU relay as a service, you must offer your users the source.
-Bundled font (Roboto) is Apache-2.0; the CA bundle is from the Mozilla/curl
-project. Trademarks belong to their owners.
+[AGPL-3.0](LICENSE). If you run a modified version as a service, you owe your users
+the source. The bundled Roboto font is Apache-2.0; the CA bundle comes from the
+curl/Mozilla set.
