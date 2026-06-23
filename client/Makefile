@@ -8,7 +8,6 @@ $(error "DEVKITPRO is not set. Source the devkitPro environment.")
 endif
 
 TOPDIR ?= $(CURDIR)
-include $(DEVKITPRO)/wut/share/wut_rules
 
 #---------------------------------------------------------------------------------
 TARGET   := DiizerU
@@ -17,13 +16,18 @@ SOURCES  := src src/platform src/core src/audio src/ui third_party/cjson
 DATA     := data
 INCLUDES := src include third_party
 
-# .wuhb metadata + bundled content (romfs at /vol/content)
+# .wuhb metadata + bundled content (romfs at /vol/content).
+# IMPORTANT: these APP_* must be set BEFORE including wut_rules — wut_rules
+# evaluates them in parse-time `ifneq` blocks to build WUHB_OPTIONS, so anything
+# defined after the include is invisible to it (silently drops icon/author/content).
 APP_CONTENT   := $(TOPDIR)/content
 APP_NAME      := DiizerU
 APP_SHORTNAME := DiizerU
 APP_AUTHOR    := Cycl0o0
-# Homebrew icon shown in the launcher (PNG). Optional — only used if present.
+# Homebrew icon shown in the launcher (PNG, 128x128). Optional — only used if present.
 APP_ICON      := $(if $(wildcard $(TOPDIR)/meta/icon.png),$(TOPDIR)/meta/icon.png,)
+
+include $(DEVKITPRO)/wut/share/wut_rules
 #---------------------------------------------------------------------------------
 
 ARCH := -mcpu=750 -meabi -mhard-float
