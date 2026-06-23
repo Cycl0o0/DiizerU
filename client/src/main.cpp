@@ -121,9 +121,9 @@ int main(int /*argc*/, char** /*argv*/) {
     // sends ADPCM that decodes to 22050 Hz (raw PCM is too heavy for the Wii U).
     audio::SdlAudioBackend backend;
     audio::AudioFormat afmt;
-    afmt.sample_rate = native ? 44100 : 22050;
-    // Native path starts the device almost immediately (small paused backlog =
-    // small startup flush) and relies on wall-clock pacing for the cushion.
+    // Both paths run the device at 22050 Hz — the rate the relay/ADPCM path used
+    // with no fast-start. The native path decimates its 44100 MP3 decode to match.
+    afmt.sample_rate = 22050;
     afmt.prebuffer_ms = native ? 250 : 1000;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);

@@ -76,6 +76,7 @@ void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& t
     mp3in_.clear();
     pace_started_ = false;
     pace_frames_ = 0;
+    decim_phase_ = 0;
     running_.store(true);
     thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
 }
@@ -95,35 +96,35 @@ bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
         if (info.frame_bytes == 0) break; // need more data
         pos += (size_t)info.frame_bytes;
         if (samples <= 0) continue; // header/skip frame
-        // Emit interleaved s16 *little-endian* + upmix mono -> stereo. minimp3
-        // returns native-endian shorts; the Wii U is big-endian and the backend
-        // expects s16le (AUDIO_S16LSB), so write the bytes explicitly.
+        // Decimate 44100 -> 22050 (keep every other frame; the proven-good rate
+        // on this hardware) and emit interleaved s16 *little-endian* + upmix mono
+        // -> stereo. minimp3 returns native-endian shorts; the Wii U is big-endian
+        // and the backend expects s16le, so write the bytes explicitly.
+        const int ch = info.channels;
         out.clear();
-        out.resize((size_t)samples * 2 /*stereo*/ * 2 /*bytes*/);
+        out.reserve((size_t)samples * 2 + 4);
         size_t o = 0;
-        if (info.channels == 2) {
-            for (int i = 0; i < samples * 2; ++i) {
-                out[o++] = (uint8_t)(pcm[i] & 0xff);
-                out[o++] = (uint8_t)((pcm[i] >> 8) & 0xff);
+        int emitted = 0;
+        for (int i = 0; i < samples; ++i) {
+            if (decim_phase_ == 0) {
+                short L = (ch == 2) ? pcm[i * 2] : pcm[i];
+                short R = (ch == 2) ? pcm[i * 2 + 1] : pcm[i];
+                out.push_back((uint8_t)(L & 0xff)); out.push_back((uint8_t)((L >> 8) & 0xff));
+                out.push_back((uint8_t)(R & 0xff)); out.push_back((uint8_t)((R >> 8) & 0xff));
+                ++emitted;
             }
-        } else {
-            for (int i = 0; i < samples; ++i) {
-                uint8_t lo = (uint8_t)(pcm[i] & 0xff), hi = (uint8_t)((pcm[i] >> 8) & 0xff);
-                out[o++] = lo; out[o++] = hi; // L
-                out[o++] = lo; out[o++] = hi; // R
-            }
+            decim_phase_ ^= 1;
         }
-        if (!backend_.queue(out.data(), o)) return false;
+        o = out.size();
+        if (o && !backend_.queue(out.data(), o)) return false;
 
-        // Wall-clock pace: hold the queue ~700ms ahead of real time. Without this
-        // the Wii U flushes a buffered backlog at the start of a track (audible as
-        // an ultra-fast burst) before settling. Feeding at real time keeps the
-        // backlog tiny so there's nothing to flush.
-        pace_frames_ += (uint64_t)samples; // per-channel frames
+        // Wall-clock pace: hold the queue ~700ms ahead of real time so the Wii U
+        // never has a backlog to flush fast at track start. Output is 22050 Hz.
+        pace_frames_ += (uint64_t)emitted; // output (22050) frames
         if (!pace_started_) { pace_started_ = true; pace_start_ = std::chrono::steady_clock::now(); }
         for (;;) {
             if (should_stop()) break;
-            double queued_ms = (double)pace_frames_ * 1000.0 / 44100.0;
+            double queued_ms = (double)pace_frames_ * 1000.0 / 22050.0;
             double elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::steady_clock::now() - pace_start_).count();
             if (queued_ms - elapsed_ms > 700.0)

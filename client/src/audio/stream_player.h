@@ -43,10 +43,9 @@ public:
     void add_bytes(size_t n) { bytes_.fetch_add((uint32_t)n); }
     bool adpcm() const { return adpcm_; }
     bool deezer() const { return deezer_; }
-    // Download throttle target. The native path keeps the queue SHALLOW (~1.5s)
-    // and self-paces to playback rate — a deep queue makes the Wii U's SDL audio
-    // drain too fast at the start of a track. The relay path stays server-paced.
-    size_t max_buffered() const { return deezer_ ? (size_t)44100 * 4 * 3 / 2 : (size_t)44100 * 4 * 8; }
+    // Download throttle target. Native output is 22050 Hz stereo s16 (the
+    // proven-good relay rate on this hardware); cap ~1.5s. Relay path ~8s.
+    size_t max_buffered() const { return deezer_ ? (size_t)22050 * 4 * 3 / 2 : (size_t)44100 * 4 * 8; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.
@@ -68,7 +67,8 @@ private:
     // gets a backlog to flush fast at the start of a track.
     bool pace_started_ = false;
     std::chrono::steady_clock::time_point pace_start_;
-    uint64_t pace_frames_ = 0; // total per-channel frames queued
+    uint64_t pace_frames_ = 0; // total output (22050) frames queued
+    int decim_phase_ = 0;      // 2:1 decimation 44100 -> 22050 (keep every other)
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stop_{false};
