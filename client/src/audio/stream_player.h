@@ -42,11 +42,11 @@ public:
     void add_bytes(size_t n) { bytes_.fetch_add((uint32_t)n); }
     bool adpcm() const { return adpcm_; }
     bool deezer() const { return deezer_; }
-    // Download throttle target (bytes buffered in the backend ring). Native is
-    // 44100 Hz stereo s16; cap ~3s. Relay path ~8s. The ring (~10s) sits above
-    // both so queue() never drops. The pull-model device drains at real time, so
-    // a deep cushion just rides out bursty Wi-Fi without ever playing fast.
-    size_t max_buffered() const { return deezer_ ? (size_t)44100 * 4 * 3 : (size_t)44100 * 4 * 8; }
+    // Download throttle target (bytes buffered in the backend ring). 44100 Hz
+    // stereo s16, ~8s cushion. The ring (~12s) sits above this so queue() never
+    // drops. The callback's real-time governor caps playback speed regardless of
+    // depth, so a deep cushion is pure Wi-Fi-jitter insurance — never fast play.
+    size_t max_buffered() const { return (size_t)44100 * 4 * 8; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.

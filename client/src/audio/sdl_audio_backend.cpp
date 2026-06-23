@@ -70,12 +70,17 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
     int pre_ms = fmt.prebuffer_ms > 0 ? fmt.prebuffer_ms : 500;
     prebuffer_ = (size_t)fmt.sample_rate * frame_bytes_ * pre_ms / 1000;
 
-    // Ring sized to ~10s; the curl write callback throttles on queued_bytes()
-    // well below this, so queue() never has to drop.
-    cap_ = (size_t)fmt.sample_rate * frame_bytes_ * 10;
+    // Ring sized to ~12s; the curl write callback throttles on queued_bytes()
+    // well below this, so queue() never has to drop. With the real-time governor
+    // a deep ring is purely jitter insurance — it can no longer cause fast play.
+    cap_ = (size_t)fmt.sample_rate * frame_bytes_ * 12;
     ring_.assign(cap_, 0);
     head_ = tail_ = avail_ = 0;
     playing_ = false;
+
+    rate_ = fmt.sample_rate;
+    credit_frames_ = have.samples > 0 ? (size_t)have.samples : 2048;
+    out_frames_ = 0;
 
     // Run the device immediately; the callback emits silence until the prebuffer
     // cushion is reached, so there is no paused->unpaused backlog to rush.
@@ -97,18 +102,49 @@ void SdlAudioBackend::audio_cb(void* userdata, Uint8* stream, int len) {
 
 void SdlAudioBackend::fill(Uint8* stream, int len) {
     std::lock_guard<std::mutex> lk(m_);
+    const size_t fb = (size_t)frame_bytes_;
+    const size_t len_fr = (size_t)len / fb;
+
     // Hold silence until the cushion is built (per track; clear() re-arms this).
     if (!playing_) {
-        if (avail_ >= prebuffer_ && prebuffer_ > 0) playing_ = true;
-        else { std::memset(stream, 0, (size_t)len); return; }
+        if (avail_ >= prebuffer_ && prebuffer_ > 0) {
+            playing_ = true;
+            t0_ = std::chrono::steady_clock::now();
+            out_frames_ = 0;
+        } else {
+            std::memset(stream, 0, (size_t)len);
+            return;
+        }
     }
-    size_t n = std::min((size_t)len, avail_);
+
+    // Real-time budget: how many frames SHOULD have been released by now, plus a
+    // one-period credit so the first callback isn't pure silence. Releasing only
+    // up to this budget caps playback at real time even if the port pulls faster.
+    auto now = std::chrono::steady_clock::now();
+    uint64_t elapsed_ns =
+        (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now - t0_).count();
+    uint64_t budget = (uint64_t)((double)elapsed_ns * (double)rate_ / 1e9) + credit_frames_;
+    size_t allowed = budget > out_frames_ ? (size_t)(budget - out_frames_) : 0;
+
+    size_t avail_fr = avail_ / fb;
+    size_t n_fr = std::min(len_fr, std::min(allowed, avail_fr));
+    size_t n = n_fr * fb;
+
     size_t first = std::min(n, cap_ - head_);
     std::memcpy(stream, ring_.data() + head_, first);
     if (n > first) std::memcpy(stream + first, ring_.data(), n - first);
     head_ = (head_ + n) % cap_;
     avail_ -= n;
-    if ((size_t)len > n) std::memset(stream + n, 0, (size_t)len - n); // underrun -> silence
+    out_frames_ += n_fr;
+
+    if (n < (size_t)len) std::memset(stream + n, 0, (size_t)len - n); // over-pull / underrun -> silence
+
+    // Underran the real-time demand (ring empty): drop the schedule debt so we
+    // don't later release a fast catch-up burst. Audio just resumes at real time.
+    if (avail_fr < allowed) {
+        t0_ = now;
+        out_frames_ = 0;
+    }
 }
 
 bool SdlAudioBackend::queue(const uint8_t* data, size_t len) {
