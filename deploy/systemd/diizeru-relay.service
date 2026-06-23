@@ -1,0 +1,25 @@
+# Native systemd unit for the relay (no Docker; fits a shared nginx VPS).
+# Install: copy to /etc/systemd/system/, then:
+#   systemctl daemon-reload && systemctl enable --now diizeru-relay
+[Unit]
+Description=DiizerU relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=diizeru
+Group=diizeru
+WorkingDirectory=/opt/diizeru/relay
+EnvironmentFile=/opt/diizeru/relay/.env
+ExecStart=/opt/diizeru/relay/target/release/diizeru-relay
+Restart=on-failure
+RestartSec=3
+# hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://your-domain.example/proto/ws-events.schema.json",
+  "title": "DiizerU WebSocket events (v1)",
+  "description": "Server->client push frames on /v1/ws. Each frame is one JSON object with a discriminant `type`. Client->server frames are optional pings; control happens over REST.",
+  "oneOf": [
+    { "$ref": "#/$defs/PlaybackEvent" },
+    { "$ref": "#/$defs/QueueEvent" },
+    { "$ref": "#/$defs/ErrorEvent" },
+    { "$ref": "#/$defs/SessionEvent" }
+  ],
+  "$defs": {
+    "PlaybackEvent": {
+      "type": "object",
+      "required": ["type", "state"],
+      "properties": {
+        "type": { "const": "playback" },
+        "state": { "$ref": "openapi.yaml#/components/schemas/PlaybackState" }
+      }
+    },
+    "QueueEvent": {
+      "type": "object",
+      "required": ["type", "queue"],
+      "properties": {
+        "type": { "const": "queue" },
+        "queue": { "$ref": "openapi.yaml#/components/schemas/Queue" }
+      }
+    },
+    "ErrorEvent": {
+      "type": "object",
+      "required": ["type", "error"],
+      "properties": {
+        "type": { "const": "error" },
+        "error": { "type": "string" },
+        "message": { "type": "string" },
+        "fatal": { "type": "boolean", "description": "if true, client should re-pair or stop" }
+      }
+    },
+    "SessionEvent": {
+      "type": "object",
+      "required": ["type", "event"],
+      "properties": {
+        "type": { "const": "session" },
+        "event": { "type": "string", "enum": ["ready", "idle_timeout", "revoked", "killswitch"] }
+      }
+    }
+  }
+}

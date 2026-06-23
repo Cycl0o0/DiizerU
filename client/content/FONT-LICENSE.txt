@@ -1,0 +1,2 @@
+UI font: Roboto Regular (Apache License 2.0), https://github.com/googlefonts/roboto-2
+Replaces Inter variable font (freetype on wut cannot open variable fonts).

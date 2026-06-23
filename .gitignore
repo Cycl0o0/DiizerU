@@ -1,0 +1,27 @@
+# Rust
+/relay/target
+**/*.rs.bk
+
+# Secrets — NEVER commit
+*.key
+*.age
+.env
+.env.*
+!.env.example
+secrets/
+
+# Wii U client build
+/client/build
+*.wuhb
+*.rpx
+*.elf
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Deploy runtime data
+/deploy/data
+/deploy/caddy_data
