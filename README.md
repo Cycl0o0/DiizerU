@@ -22,16 +22,16 @@ Working right now:
 - Audio gets decoded on the relay and sent to the console as a tiny ADPCM stream,
   so the Wii U never touches any DRM and the bandwidth is trivial
 
-It's a beta. Rough edges exist. Nothing here is guaranteed to stay up.
+It's young and a hobby project. Rough edges exist. Nothing here is guaranteed to
+stay up.
 
 ## Trying it without hosting anything
 
-I run a small relay for the beta. There's a public invite that's good for a week
-(until **2026-06-30**) and can be used by more than one person:
+I run a small public relay. No invite, no waitlist — bring your own Deezer
+Premium account and pair:
 
 ```
 Relay:   https://diizeru.cyclooo.fr
-Invite:  hEYQPFQbJ0yF
 ```
 
 What you need:
@@ -44,9 +44,9 @@ Then:
 1. Download `DiizerU.wuhb` from the [Releases](../../releases) page, drop it in
    `sd:/wiiu/apps/`.
 2. Launch it. You'll get a code on the TV.
-3. On your phone go to <https://diizeru.cyclooo.fr/v1/pair>, type in the TV code,
-   the invite, and your Deezer ARL. The page walks you through finding the ARL —
-   it's a cookie in your browser.
+3. On your phone go to <https://diizeru.cyclooo.fr/v1/pair>, type in the TV code
+   and your Deezer ARL. The page walks you through finding the ARL — it's a cookie
+   in your browser.
 4. That's it, go listen to music.
 
 If handing your ARL to my server makes you uneasy (totally fair), host your own —
@@ -71,7 +71,7 @@ docker compose up -d --build
 The bits of `.env` that matter:
 
 ```ini
-RELAY_MODE=self-hosted             # you're auto-allowlisted, no invite needed
+RELAY_MODE=self-hosted             # just sets onboarding copy; pairing is open either way
 PUBLIC_BASE_URL=https://your-domain.example
 DIIZERU_MASTER_KEY=...             # head -c32 /dev/urandom | base64  -> encrypts your ARL
 DIIZERU_ADMIN_TOKEN=...            # head -c24 /dev/urandom | base64
@@ -122,7 +122,7 @@ separate token, and there's a kill switch plus per-user revocation. Details in
 
 ## The fine print
 
-- It's a beta and a hobby. No SLA, things may break.
+- It's a hobby project. No SLA, things may break.
 - Your own Deezer Premium account only. No sharing accounts.
 - It reaches Deezer the unofficial way, which almost certainly breaks Deezer's
   terms for third-party apps. Personal/educational use, your own account, your own

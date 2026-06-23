@@ -28,7 +28,7 @@ stream. The console only plays bytes and draws the UI — no credentials, no DRM
 | `deezer/` | ARL login (`client`), key derivation + Blowfish decrypt (`crypto`), MP3/FLAC decode (`decode`), `AudioSource` (`source`), browse mapping (`proxy`) |
 | `audio/` | `AudioSource` + `StreamEncoder` traits; PCM and IMA-ADPCM encoders |
 | `session/` | one player session per user, idle GC, max-concurrency cap |
-| `store/` | allowlist, invite codes, encrypted token (ARL) store, relay sessions |
+| `store/` | allowlist (for revocation), encrypted token (ARL) store, relay sessions |
 | `auth/pairing` | device-code pairing state |
 
 Audio path: Deezer track → decrypted MP3/FLAC → decoded to 44.1k f32 → IMA ADPCM
@@ -53,15 +53,14 @@ in the binary — the `.wuhb` content mount isn't reachable via `fopen` on the W
 
 The client↔relay API is an OpenAPI spec under `/v1`. The client only ever reads
 its relay URL from config, so the exact same build works against the central
-relay or a self-hosted one — only the URL and onboarding differ
-(`RELAY_MODE = central | self-hosted`). The relay is a deployment choice, not a
-hard dependency.
+relay or a self-hosted one — only the URL differs (`RELAY_MODE = central |
+self-hosted` just adjusts onboarding copy and the default public URL). The relay
+is a deployment choice, not a hard dependency.
 
 ## Data flow: first launch → playing
 
 1. Console has no saved session → shows a device code on the TV.
-2. User opens the relay's `/v1/pair` on a phone, enters the code + Deezer ARL
-   (+ invite, in central mode).
+2. User opens the relay's `/v1/pair` on a phone, enters the code + Deezer ARL.
 3. Relay validates the ARL, stores it encrypted, issues an opaque relay session
    token to the console.
 4. Console browses (relay proxies Deezer) and plays: `play_uri` makes the relay

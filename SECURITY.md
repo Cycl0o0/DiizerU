@@ -1,6 +1,6 @@
 # Security & Privacy
 
-DiizerU is a hobby beta. This is the threat model and what the relay does with
+DiizerU is a hobby project. This is the threat model and what the relay does with
 your data. The short version: **self-host if you can** — then nothing sensitive
 ever leaves your machine.
 
@@ -26,21 +26,22 @@ access to your Deezer account, so treat it like a password.
   own reverse proxy).
 - The admin API is behind a separate token (`DIIZERU_ADMIN_TOKEN`), never the
   user path.
-- Central mode is invite-gated (single-use or time-limited multi-use codes). In
-  self-hosted mode you're the implicit allowlist; no invites.
+- Onboarding is open: any account whose Deezer ARL logs in successfully can pair.
+  Access control is after the fact — an operator can revoke any user, which
+  invalidates their relay tokens immediately.
 
 ## Privacy
 
 - The only personal data stored is your encrypted ARL and a Deezer user id,
-  needed to key the session and the allowlist.
+  needed to key the session and to support revocation.
 - No listening history is persisted beyond the live now-playing state.
 
 ## GDPR-ish note
 
-If you run the **central** relay for others, you're the data controller for their
-encrypted ARLs and ids; lawful basis is their consent (they accept the invite and
-paste their own token), and erasure is the revoke endpoint. In **self-hosted**
-mode there's no third party — it's just your own data on your own box.
+If you run a relay for others, you're the data controller for their encrypted
+ARLs and ids; lawful basis is their consent (they paste their own token), and
+erasure is the revoke endpoint. In **self-hosted** mode there's no third party —
+it's just your own data on your own box.
 
 ## Reporting
 

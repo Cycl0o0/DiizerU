@@ -35,8 +35,6 @@ pub struct Config {
     pub admin_token: String,
     pub session_idle_timeout: Duration,
     pub max_concurrent_sessions: usize,
-    /// In self-hosted mode the allowlist is implicitly {self}; codes optional.
-    pub open_onboarding: bool,
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -71,7 +69,7 @@ impl Config {
         let public_base_url = env_or("PUBLIC_BASE_URL", "https://your-domain.example");
 
         Ok(Config {
-            mode: mode.clone(),
+            mode,
             bind_addr: env_or("BIND_ADDR", "0.0.0.0:8080"),
             public_base_url,
             master_key,
@@ -82,7 +80,6 @@ impl Config {
             max_concurrent_sessions: env_or("MAX_CONCURRENT_SESSIONS", "5")
                 .parse()
                 .unwrap_or(5),
-            open_onboarding: matches!(mode, RelayMode::SelfHosted),
         })
     }
 }

@@ -11,7 +11,7 @@ use axum::{
     async_trait,
     extract::FromRequestParts,
     http::request::Parts,
-    routing::{get, post, put},
+    routing::{get, post},
     Router,
 };
 use tower_http::cors::CorsLayer;
@@ -94,8 +94,6 @@ pub fn router(state: AppState) -> Router {
         // stream
         .route("/stream", get(stream::stream))
         // admin
-        .route("/admin/invite", post(admin::invite))
-        .route("/admin/allow/:user_id", put(admin::allow))
         .route("/admin/revoke/:user_id", post(admin::revoke))
         .route("/admin/killswitch", post(admin::killswitch))
         .route("/admin/deezer-test", get(admin::deezer_test));

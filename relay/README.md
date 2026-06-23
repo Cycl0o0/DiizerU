@@ -7,8 +7,7 @@ the user's ARL, and streams decrypted+decoded audio to the Wii U as IMA ADPCM.
 
 ```sh
 cp .env.example .env          # fill in the secrets (see below)
-cargo run                     # Deezer is the default feature
-# cargo run --no-default-features   # tone-only test relay (no Deezer)
+cargo run                     # Deezer audio is built in — no feature flags
 ```
 
 Minimum env:
@@ -28,7 +27,7 @@ The client↔relay contract is in [`../proto`](../proto). Highlights:
 - `GET /v1/search`, `/v1/browse/{playlists,favorites,playlist/:id,album/:id}`
 - `GET /v1/playback`, `POST /v1/playback/command`, `GET/POST /v1/queue`
 - `GET /v1/stream?fmt=adpcm_ima` — chunked audio
-- `POST /v1/admin/{invite,revoke/:id,killswitch}` (admin bearer)
+- `POST /v1/admin/{revoke/:id,killswitch}` (admin bearer)
 
 ## Layout
 
@@ -39,7 +38,7 @@ src/
   deezer/     ARL login, Blowfish decrypt, MP3/FLAC decode, AudioSource, browse
   audio/      AudioSource + StreamEncoder traits; PCM + IMA-ADPCM encoders
   session/    per-user player session (idle GC, max-concurrency)
-  store/      allowlist, invites, encrypted ARL store, relay sessions
+  store/      allowlist (for revocation), encrypted ARL store, relay sessions
   api/        axum routers + handlers
 ```
 

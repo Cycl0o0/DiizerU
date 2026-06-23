@@ -39,7 +39,7 @@ timeout; for `/v1/ws` pass the WebSocket upgrade headers.
 ### Environment (`relay/.env`)
 
 ```ini
-RELAY_MODE=self-hosted        # implicit allowlist = you; no invite codes needed
+RELAY_MODE=self-hosted        # only adjusts onboarding copy; pairing is open either way
 BIND_ADDR=0.0.0.0:8080
 PUBLIC_BASE_URL=https://your-domain.example
 DIIZERU_MASTER_KEY=...        # head -c32 /dev/urandom | base64  (encrypts the ARL)
@@ -47,15 +47,11 @@ DIIZERU_ADMIN_TOKEN=...       # head -c24 /dev/urandom | base64  (admin API)
 SESSION_IDLE_TIMEOUT_SECS=900
 MAX_CONCURRENT_SESSIONS=5
 STORE_PATH=/opt/diizeru/data/store.json
-LIBRESPOT_CACHE_DIR=/opt/diizeru/data/librespot   # only used by the librespot build
 DEEZER_ARL=                   # optional: only for the /admin/deezer-test endpoint
 ```
 
-Build flags:
-- `--features deezer` — real Deezer audio (recommended).
-- no features — streams a test tone (handy to verify the pipeline without an ARL).
-- `--features librespot` — the legacy Spotify path (currently blocked upstream;
-  see the main README).
+`cargo build --release` produces the relay binary — Deezer audio is built in.
+There are no Cargo feature flags.
 
 ## 2. Client (`.wuhb`)
 
@@ -76,17 +72,13 @@ Copy `DiizerU.wuhb` to `sd:/wiiu/apps/`. Tell it which relay to use, either:
 1. Launch DiizerU on the Wii U → it shows a TV code.
 2. On a phone open `https://your-domain.example/v1/pair`.
 3. Enter the TV code and your **Deezer ARL** (the page shows how to find it in
-   your browser cookies). In `self-hosted` mode no invite code is required.
+   your browser cookies). Pairing is open — no invite code.
 4. Browse and play.
 
 ## Admin (optional)
 
 ```sh
 A="Authorization: Bearer $DIIZERU_ADMIN_TOKEN"
-# single-use invite (central mode):
-curl -X POST -H "$A" https://your-domain.example/v1/admin/invite
-# public multi-use invite, valid N days:
-curl -X POST -H "$A" "https://your-domain.example/v1/admin/invite?multi=true&days=7"
 # revoke a user (delete token + kill session):
 curl -X POST -H "$A" https://your-domain.example/v1/admin/revoke/<user_id>
 # kill switch (stop everything):

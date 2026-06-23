@@ -1,10 +1,10 @@
 //! Device-code pairing for Deezer.
 //!
 //! Console `POST /pair/start` -> shows a user_code on the TV. The user opens
-//! `GET /pair` on a phone, enters the code + their Deezer ARL (+ invite in
-//! central mode), and `POST /pair/deezer` validates the ARL, stores it
-//! encrypted, and approves the pairing. The console polls `POST /pair/poll`
-//! and receives an opaque relay session token.
+//! `GET /pair` on a phone, enters the code + their Deezer ARL, and
+//! `POST /pair/deezer` validates the ARL, stores it encrypted, and approves the
+//! pairing. The console polls `POST /pair/poll` and receives an opaque relay
+//! session token. Onboarding is open — any valid Deezer account can pair.
 
 use axum::{extract::State, response::Html, Json};
 use serde::Deserialize;
@@ -39,7 +39,6 @@ pub async fn pair_start(
             .and_then(|b| b.0.device_name)
             .unwrap_or_else(|| "Wii U".into()),
         status: PairStatus::Pending,
-        invite_code: None,
         relay_session_token: None,
         expires_at: now + PAIR_TTL_SECS,
     };
@@ -71,7 +70,6 @@ pub async fn pair_poll(
     let status = match rec.status {
         PairStatus::Pending => "pending",
         PairStatus::Approved => "approved",
-        PairStatus::Denied => "denied",
         PairStatus::Expired => "expired",
     };
     let mut out = json!({ "status": status });
@@ -81,14 +79,9 @@ pub async fn pair_poll(
     Ok(Json(out))
 }
 
-/// GET /v1/pair — phone-facing onboarding: TV code + Deezer ARL (+ invite), with
-/// a tutorial on how to find the ARL.
-pub async fn verify_page(State(state): State<AppState>) -> Html<String> {
-    let invite_field = if state.cfg.open_onboarding {
-        String::new()
-    } else {
-        r#"<label>Invite code<input name="invite" autocapitalize=off autocorrect=off required></label>"#.into()
-    };
+/// GET /v1/pair — phone-facing onboarding: TV code + Deezer ARL, with a tutorial
+/// on how to find the ARL. Open onboarding (no invite).
+pub async fn verify_page(State(_state): State<AppState>) -> Html<String> {
     Html(format!(
         r#"<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -124,7 +117,6 @@ code{{background:#26262e;padding:.1rem .3rem;border-radius:4px}}</style></head>
 
 <form method="post" action="/v1/pair/deezer">
 <label>TV code<input name="user_code" placeholder="ABCD-1234" autocapitalize=characters autocorrect=off required></label>
-{invite_field}
 <label>Deezer ARL<textarea name="arl" placeholder="paste the arl cookie value" autocapitalize=off autocorrect=off spellcheck=false required></textarea></label>
 <button type="submit">Link Wii U</button>
 </form>
@@ -146,13 +138,12 @@ h1{{color:#a238ff}}</style></head><body><h1>{title}</h1><p>{msg}</p></body></htm
 #[derive(Deserialize)]
 pub struct DeezerPairForm {
     user_code: String,
-    #[serde(default)]
-    invite: Option<String>,
     arl: String,
 }
 
-/// POST /v1/pair/deezer — validate the ARL, gate on allowlist, store the ARL
-/// (encrypted), and approve the pairing so the console gets a session token.
+/// POST /v1/pair/deezer — validate the ARL, store it (encrypted), and approve
+/// the pairing so the console gets a session token. Onboarding is open: any
+/// account whose ARL logs in successfully is allowed.
 pub async fn deezer_pair(
     State(state): State<AppState>,
     axum::Form(f): axum::Form<DeezerPairForm>,
@@ -175,22 +166,10 @@ pub async fn deezer_pair(
     };
     let user_id = format!("deezer:{}", session.user_id);
 
-    // Allowlist gate (private beta).
+    // Open onboarding: a successful Deezer login is enough. Mark the account
+    // Allowed so its relay tokens stay valid until an operator revokes it.
     let now = crate::now_epoch();
-    let allowed = if state.store.is_allowed(&user_id) {
-        true
-    } else if state.cfg.open_onboarding {
-        state.store.allow_user(&user_id);
-        true
-    } else if let Some(invite) = &f.invite {
-        state.store.consume_invite(invite.trim(), &user_id, now)
-    } else {
-        false
-    };
-    if !allowed {
-        state.pairing.deny(&dc);
-        return Ok(Html(page("Not invited", "This account isn't on the DiizerU beta allowlist.")));
-    }
+    state.store.allow_user(&user_id);
 
     // Store the ARL encrypted at rest.
     let sealed = state

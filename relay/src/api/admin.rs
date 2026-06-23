@@ -1,5 +1,5 @@
-//! Admin endpoints (separate bearer credential, see SECURITY.md). Invite,
-//! allowlist, immediate revocation, and the global kill switch.
+//! Admin endpoints (separate bearer credential, see SECURITY.md): immediate
+//! user revocation and the global kill switch. Onboarding is open (no invites).
 
 use std::sync::atomic::Ordering;
 
@@ -9,7 +9,6 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
 
 use axum::{
     extract::Query,
@@ -18,54 +17,7 @@ use axum::{
 };
 
 use crate::api::AdminAuth;
-use crate::crypto::random_token;
-use crate::error::ApiResult;
 use crate::state::AppState;
-use crate::store::InviteCode;
-
-const INVITE_TTL_SECS: i64 = 7 * 24 * 3600;
-
-#[derive(Deserialize, Default)]
-pub struct InviteQ {
-    /// Public multi-use invite (usable by many until expiry). Default single-use.
-    #[serde(default)]
-    multi: bool,
-    /// Validity in days (default 7).
-    #[serde(default)]
-    days: Option<i64>,
-}
-
-pub async fn invite(
-    _a: AdminAuth,
-    State(state): State<AppState>,
-    q: Option<axum::extract::Query<InviteQ>>,
-) -> ApiResult<Json<Value>> {
-    let q = q.map(|x| x.0).unwrap_or_default();
-    let now = crate::now_epoch();
-    let code = random_token(9);
-    let secs = q.days.map(|d| d * 86400).unwrap_or(INVITE_TTL_SECS);
-    let expires_at = now + secs;
-    state.store.add_invite(InviteCode {
-        code: code.clone(),
-        expires_at,
-        used_by: None,
-        multi_use: q.multi,
-    });
-    Ok(Json(json!({
-        "code": code,
-        "expires_at": crate::iso8601(expires_at),
-        "multi_use": q.multi,
-    })))
-}
-
-pub async fn allow(
-    _a: AdminAuth,
-    State(state): State<AppState>,
-    Path(user_id): Path<String>,
-) -> StatusCode {
-    state.store.allow_user(&user_id);
-    StatusCode::NO_CONTENT
-}
 
 /// Revoke a user: delete tokens, kill live session, invalidate relay tokens.
 pub async fn revoke(

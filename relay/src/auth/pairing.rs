@@ -9,7 +9,6 @@ use std::sync::RwLock;
 pub enum PairStatus {
     Pending,
     Approved,
-    Denied,
     Expired,
 }
 
@@ -19,8 +18,6 @@ pub struct PairingRecord {
     pub user_code: String,
     pub device_name: String,
     pub status: PairStatus,
-    /// Invite code the user supplied on the verify page (consumed on link).
-    pub invite_code: Option<String>,
     /// Set when approved; the opaque relay session token for the console.
     pub relay_session_token: Option<String>,
     pub expires_at: i64,
@@ -65,22 +62,10 @@ impl PairingManager {
         self.by_device_code.read().unwrap().get(device_code).cloned()
     }
 
-    pub fn set_invite(&self, device_code: &str, invite: Option<String>) {
-        if let Some(rec) = self.by_device_code.write().unwrap().get_mut(device_code) {
-            rec.invite_code = invite;
-        }
-    }
-
     pub fn approve(&self, device_code: &str, relay_session_token: String) {
         if let Some(rec) = self.by_device_code.write().unwrap().get_mut(device_code) {
             rec.status = PairStatus::Approved;
             rec.relay_session_token = Some(relay_session_token);
-        }
-    }
-
-    pub fn deny(&self, device_code: &str) {
-        if let Some(rec) = self.by_device_code.write().unwrap().get_mut(device_code) {
-            rec.status = PairStatus::Denied;
         }
     }
 
