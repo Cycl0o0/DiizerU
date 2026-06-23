@@ -43,10 +43,10 @@ public:
     bool adpcm() const { return adpcm_; }
     bool deezer() const { return deezer_; }
     // Download throttle target (bytes buffered in the backend ring). 44100 Hz
-    // stereo s16, ~8s cushion. The ring (~12s) sits above this so queue() never
-    // drops. The callback's real-time governor caps playback speed regardless of
-    // depth, so a deep cushion is pure Wi-Fi-jitter insurance — never fast play.
-    size_t max_buffered() const { return (size_t)44100 * 4 * 8; }
+    // stereo s16, ~12s ongoing cushion to ride out Wi-Fi throughput dips mid-track
+    // (the device drains at exactly real time, so deeper is pure jitter insurance).
+    // The ring (~16s) sits above this so queue() never drops.
+    size_t max_buffered() const { return (size_t)44100 * 4 * 12; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.

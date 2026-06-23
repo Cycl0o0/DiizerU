@@ -70,10 +70,10 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
     int pre_ms = fmt.prebuffer_ms > 0 ? fmt.prebuffer_ms : 500;
     prebuffer_ = (size_t)fmt.sample_rate * frame_bytes_ * pre_ms / 1000;
 
-    // Ring sized to ~12s; the curl write callback throttles on queued_bytes()
-    // well below this, so queue() never has to drop. With the real-time governor
-    // a deep ring is purely jitter insurance — it can no longer cause fast play.
-    cap_ = (size_t)fmt.sample_rate * frame_bytes_ * 12;
+    // Ring sized to ~16s, above the producer's ~12s throttle target so queue()
+    // never has to drop. A deep ring is pure Wi-Fi-jitter insurance; the callback
+    // drains it at exactly the device rate, so depth can't affect playback speed.
+    cap_ = (size_t)fmt.sample_rate * frame_bytes_ * 16;
     ring_.assign(cap_, 0);
     head_ = tail_ = avail_ = 0;
     playing_ = false;

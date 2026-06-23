@@ -381,6 +381,13 @@ bool DeezerClient::media_url(const std::string& track_token, std::string& url, s
         const cJSON* m0 = media ? cJSON_GetArrayItem(media, 0) : nullptr;
         if (m0) {
             format = j_str(m0, "format");
+            std::printf("[deezer] media format = %s\n", format.c_str());
+#ifdef __WIIU__
+            if (FILE* lf = std::fopen("fs:/vol/external01/diizeru/audio_fmt.txt", "w")) {
+                std::fprintf(lf, "%s\n", format.c_str());
+                std::fclose(lf);
+            }
+#endif
             const cJSON* srcs = cJSON_GetObjectItemCaseSensitive(m0, "sources");
             const cJSON* s0 = srcs ? cJSON_GetArrayItem(srcs, 0) : nullptr;
             if (s0) { url = j_str(s0, "url"); ok = !url.empty(); }
