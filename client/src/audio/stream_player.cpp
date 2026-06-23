@@ -74,9 +74,6 @@ void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& t
     dz_.init(track_id);
     mp3dec_init(&mp3_);
     mp3in_.clear();
-    pace_started_ = false;
-    pace_frames_ = 0;
-    decim_phase_ = 0;
     running_.store(true);
     thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
 }
@@ -96,42 +93,28 @@ bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
         if (info.frame_bytes == 0) break; // need more data
         pos += (size_t)info.frame_bytes;
         if (samples <= 0) continue; // header/skip frame
-        // Decimate 44100 -> 22050 (keep every other frame; the proven-good rate
-        // on this hardware) and emit interleaved s16 *little-endian* + upmix mono
+        // Emit interleaved s16 *little-endian* at the native 44100 Hz + upmix mono
         // -> stereo. minimp3 returns native-endian shorts; the Wii U is big-endian
-        // and the backend expects s16le, so write the bytes explicitly.
+        // and the backend expects s16le, so write the bytes explicitly. No rate
+        // conversion here: the pull-model backend drains at real time, so full
+        // 44100 plays at correct speed (SDL upsamples to the AX rate on demand).
         const int ch = info.channels;
         out.clear();
-        out.reserve((size_t)samples * 2 + 4);
-        size_t o = 0;
-        int emitted = 0;
+        out.reserve((size_t)samples * 4);
         for (int i = 0; i < samples; ++i) {
-            if (decim_phase_ == 0) {
-                short L = (ch == 2) ? pcm[i * 2] : pcm[i];
-                short R = (ch == 2) ? pcm[i * 2 + 1] : pcm[i];
-                out.push_back((uint8_t)(L & 0xff)); out.push_back((uint8_t)((L >> 8) & 0xff));
-                out.push_back((uint8_t)(R & 0xff)); out.push_back((uint8_t)((R >> 8) & 0xff));
-                ++emitted;
-            }
-            decim_phase_ ^= 1;
+            short L = (ch == 2) ? pcm[i * 2] : pcm[i];
+            short R = (ch == 2) ? pcm[i * 2 + 1] : pcm[i];
+            out.push_back((uint8_t)(L & 0xff)); out.push_back((uint8_t)((L >> 8) & 0xff));
+            out.push_back((uint8_t)(R & 0xff)); out.push_back((uint8_t)((R >> 8) & 0xff));
         }
-        o = out.size();
-        if (o && !backend_.queue(out.data(), o)) return false;
-
-        // Wall-clock pace: hold the queue ~700ms ahead of real time so the Wii U
-        // never has a backlog to flush fast at track start. Output is 22050 Hz.
-        pace_frames_ += (uint64_t)emitted; // output (22050) frames
-        if (!pace_started_) { pace_started_ = true; pace_start_ = std::chrono::steady_clock::now(); }
-        for (;;) {
-            if (should_stop()) break;
-            double queued_ms = (double)pace_frames_ * 1000.0 / 22050.0;
-            double elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() - pace_start_).count();
-            if (queued_ms - elapsed_ms > 700.0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            else
-                break;
-        }
+        // Backpressure: one curl chunk decodes to many seconds of audio, but the
+        // ring drains at real time. Wait for room before queueing each frame so we
+        // never overflow the ring (this also throttles curl -> TCP, pacing the
+        // whole pipeline to real time without a separate clock).
+        while (!should_stop() && backend_.queued_bytes() + out.size() > max_buffered())
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        if (should_stop()) return false;
+        if (!out.empty() && !backend_.queue(out.data(), out.size())) return false;
     }
     if (pos > 0) mp3in_.erase(mp3in_.begin(), mp3in_.begin() + pos);
     return true;

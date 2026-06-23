@@ -117,14 +117,13 @@ int main(int /*argc*/, char** /*argv*/) {
         if (mode == Mode::Pairing) pairing->start();
     }
 
-    // Audio backend. Native path decodes MP3 -> 44100 Hz stereo s16; relay path
-    // sends ADPCM that decodes to 22050 Hz (raw PCM is too heavy for the Wii U).
+    // Audio backend (pull/callback model: device drains at real time, so a backlog
+    // can never play fast). Native decodes MP3 -> 44100 Hz stereo s16; relay sends
+    // ADPCM that decodes to 22050 Hz. SDL upsamples each to the AX hardware rate.
     audio::SdlAudioBackend backend;
     audio::AudioFormat afmt;
-    // Both paths run the device at 22050 Hz — the rate the relay/ADPCM path used
-    // with no fast-start. The native path decimates its 44100 MP3 decode to match.
-    afmt.sample_rate = 22050;
-    afmt.prebuffer_ms = native ? 250 : 1000;
+    afmt.sample_rate = native ? 44100 : 22050;
+    afmt.prebuffer_ms = native ? 500 : 1000;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;

@@ -5,7 +5,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -43,9 +42,11 @@ public:
     void add_bytes(size_t n) { bytes_.fetch_add((uint32_t)n); }
     bool adpcm() const { return adpcm_; }
     bool deezer() const { return deezer_; }
-    // Download throttle target. Native output is 22050 Hz stereo s16 (the
-    // proven-good relay rate on this hardware); cap ~1.5s. Relay path ~8s.
-    size_t max_buffered() const { return deezer_ ? (size_t)22050 * 4 * 3 / 2 : (size_t)44100 * 4 * 8; }
+    // Download throttle target (bytes buffered in the backend ring). Native is
+    // 44100 Hz stereo s16; cap ~3s. Relay path ~8s. The ring (~10s) sits above
+    // both so queue() never drops. The pull-model device drains at real time, so
+    // a deep cushion just rides out bursty Wi-Fi without ever playing fast.
+    size_t max_buffered() const { return deezer_ ? (size_t)44100 * 4 * 3 : (size_t)44100 * 4 * 8; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.
@@ -63,12 +64,6 @@ private:
     DeezerStripeDecryptor dz_;
     mp3dec_t mp3_;
     std::vector<uint8_t> mp3in_; // decrypted, not-yet-decoded MP3 bytes (rolling)
-    // wall-clock pacing (native): feed audio at ~real time so the Wii U never
-    // gets a backlog to flush fast at the start of a track.
-    bool pace_started_ = false;
-    std::chrono::steady_clock::time_point pace_start_;
-    uint64_t pace_frames_ = 0; // total output (22050) frames queued
-    int decim_phase_ = 0;      // 2:1 decimation 44100 -> 22050 (keep every other)
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stop_{false};

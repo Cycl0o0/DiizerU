@@ -1,10 +1,20 @@
-// audio/SdlAudioBackend — IAudioBackend over SDL2 audio (push model via
-// SDL_QueueAudio). Works on the Wii U (SDL2 -> AX) and the host. A future
-// AxAudioBackend can implement the same interface for lower-latency native
-// output without touching the streaming player.
+// audio/SdlAudioBackend — IAudioBackend over SDL2 audio using the PULL
+// (callback) model backed by our own ring buffer.
+//
+// Why pull, not SDL_QueueAudio: the Wii U SDL2 port drains a queued backlog
+// FASTER than real time to "catch up", which made a freshly-filled queue play
+// ultra-fast for the first seconds of a track (the native path fills the queue
+// at CDN speed, far above real time, so it always had a backlog). With a
+// callback device SDL pulls exactly one period of audio per real-time interval,
+// so a backlog simply waits in the ring — it can never be rushed. Underruns
+// become silence (zero-fill), never a speed change.
 #pragma once
 
 #include <SDL2/SDL.h>
+
+#include <cstdint>
+#include <mutex>
+#include <vector>
 
 #include "iaudio_backend.h"
 
@@ -14,25 +24,38 @@ class SdlAudioBackend : public IAudioBackend {
 public:
     bool init(const AudioFormat& fmt) override;
     void shutdown() override;
-    bool queue(const uint8_t* data, size_t len) override;
-    size_t queued_bytes() override;
+    bool queue(const uint8_t* data, size_t len) override; // producer (curl thread)
+    size_t queued_bytes() override;                       // ring bytes not yet played
     void pause(bool paused) override;
     void clear() override;
 
-    // Obtained device spec (for diagnostics: detect rate/format mismatch).
+    // Obtained device spec (diagnostics; note allowed_changes=0 forces have==want,
+    // so these echo the request — they do NOT reveal the real AX hardware rate).
     int obtained_freq() const { return have_.freq; }
     int obtained_format() const { return have_.format; }
     int obtained_samples() const { return have_.samples; }
     int obtained_channels() const { return have_.channels; }
 
 private:
+    static void audio_cb(void* userdata, Uint8* stream, int len); // SDL audio thread
+    void fill(Uint8* stream, int len);                            // consumer
+
     SDL_AudioDeviceID dev_ = 0;
     SDL_AudioSpec have_{};
-    int frame_bytes_ = 4;     // channels * bytes_per_sample (s16 stereo = 4)
-    uint8_t rem_[8] = {0};    // carry partial frame across queue() calls
-    size_t rem_len_ = 0;
-    size_t prebuffer_ = 0;    // bytes to accumulate before starting playback
-    bool started_ = false;    // playback unpaused once prebuffer reached
+    int frame_bytes_ = 4; // channels * bytes_per_sample (s16 stereo = 4)
+
+    // Ring buffer (single producer = curl thread, single consumer = audio cb),
+    // guarded by m_. Holds the raw s16le byte stream; the SDL callback always
+    // asks for whole-frame-multiple lengths, so byte-granular storage stays
+    // frame-aligned as long as we never drop a partial frame.
+    std::mutex m_;
+    std::vector<uint8_t> ring_;
+    size_t cap_ = 0;        // ring capacity in bytes
+    size_t head_ = 0;       // read offset
+    size_t tail_ = 0;       // write offset
+    size_t avail_ = 0;      // bytes available to play
+    size_t prebuffer_ = 0;  // bytes to accumulate before real output begins
+    bool playing_ = false;  // false => callback emits silence until prebuffer met
 };
 
 } // namespace audio
