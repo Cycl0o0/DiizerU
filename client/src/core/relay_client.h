@@ -9,6 +9,7 @@
 #include <string>
 
 #include "models.h"
+#include "music_client.h"
 
 namespace core {
 
@@ -19,7 +20,7 @@ struct HttpResult {
     bool ok() const { return status >= 200 && status < 300; }
 };
 
-class RelayClient {
+class RelayClient : public IMusicClient {
 public:
     explicit RelayClient(std::string base_url);
 
@@ -34,12 +35,16 @@ public:
     std::optional<PairPoll> pair_poll(const std::string& device_code);
     std::optional<Me> me();
 
-    // ---- M6 browse / library ----
-    std::optional<SearchResults> search(const std::string& query, const std::string& types = "track,album,artist,playlist");
-    std::optional<std::vector<Playlist>> playlists();
-    std::optional<std::vector<Track>> playlist_tracks(const std::string& id);
-    std::optional<std::vector<Track>> album_tracks(const std::string& id);
-    std::optional<std::vector<Track>> favorites();
+    // ---- M6 browse / library (IMusicClient) ----
+    std::optional<SearchResults> search(const std::string& query, const std::string& types = "track,album,artist,playlist") override;
+    std::optional<std::vector<Playlist>> playlists() override;
+    std::optional<std::vector<Track>> playlist_tracks(const std::string& id) override;
+    std::optional<std::vector<Track>> album_tracks(const std::string& id) override;
+    std::optional<std::vector<Track>> favorites() override;
+
+    // IMusicClient playback seam: relay does the decode, console streams ADPCM.
+    std::optional<StreamPlan> prepare_stream(const std::string& uri) override;
+    bool seek_to(long position_ms) override;
 
     // ---- M6 playback / queue ----
     std::optional<PlaybackState> playback();

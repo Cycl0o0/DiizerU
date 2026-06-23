@@ -28,7 +28,10 @@ static size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
     if (sp->should_stop()) return 0;
 
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(ptr);
-    if (sp->adpcm()) {
+    if (sp->deezer()) {
+        // Blowfish-decrypt the stripes + MP3-decode on the console.
+        if (!sp->feed_deezer(bytes, len)) return 0;
+    } else if (sp->adpcm()) {
         // Decode ADPCM -> s16 PCM, then queue the PCM.
         auto& pcm = sp->pcm_scratch();
         pcm.clear();
@@ -50,17 +53,63 @@ StreamPlayer::~StreamPlayer() {
     stop();
 }
 
-void StreamPlayer::start(const std::string& base_url, const std::string& token,
-                         const std::string& fmt) {
+void StreamPlayer::start_relay(const std::string& base_url, const std::string& token,
+                               const std::string& fmt) {
     stop();
     stop_.store(false);
     bytes_.store(0);
     error_.clear();
     adpcm_ = (fmt == "adpcm_ima");
+    deezer_ = false;
     decoder_.reset();
     std::string url = base_url + "/stream?fmt=" + fmt;
     running_.store(true);
-    thread_ = std::thread(&StreamPlayer::run, this, url, token);
+    thread_ = std::thread(&StreamPlayer::run, this, url, std::string(token));
+}
+
+void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& track_id) {
+    stop();
+    stop_.store(false);
+    bytes_.store(0);
+    error_.clear();
+    adpcm_ = false;
+    deezer_ = true;
+    dz_.init(track_id);
+    mp3dec_init(&mp3_);
+    mp3in_.clear();
+    running_.store(true);
+    thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
+}
+
+// Decrypt the network chunk, then MP3-decode as many whole frames as are
+// buffered, queueing s16 stereo PCM to the backend (mono is upmixed).
+bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
+    dz_.feed(data, len, mp3in_); // append decrypted bytes to the rolling buffer
+    size_t pos = 0;
+    short pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
+    std::vector<int16_t> stereo;
+    while (mp3in_.size() - pos > 0) {
+        mp3dec_frame_info_t info;
+        int samples = mp3dec_decode_frame(
+            &mp3_, mp3in_.data() + pos, (int)(mp3in_.size() - pos), pcm, &info);
+        if (info.frame_bytes == 0) break; // need more data
+        pos += (size_t)info.frame_bytes;
+        if (samples <= 0) continue; // header/skip frame
+        if (info.channels == 2) {
+            if (!backend_.queue(reinterpret_cast<const uint8_t*>(pcm),
+                                (size_t)samples * 2 * sizeof(int16_t)))
+                return false;
+        } else {
+            // upmix mono -> stereo
+            stereo.resize((size_t)samples * 2);
+            for (int i = 0; i < samples; ++i) { stereo[i * 2] = pcm[i]; stereo[i * 2 + 1] = pcm[i]; }
+            if (!backend_.queue(reinterpret_cast<const uint8_t*>(stereo.data()),
+                                stereo.size() * sizeof(int16_t)))
+                return false;
+        }
+    }
+    if (pos > 0) mp3in_.erase(mp3in_.begin(), mp3in_.begin() + pos);
+    return true;
 }
 
 void StreamPlayer::stop() {
@@ -88,6 +137,7 @@ void StreamPlayer::run(std::string url, std::string token) {
     curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, xfer_cb);
     curl_easy_setopt(c, CURLOPT_XFERINFODATA, this);
     curl_easy_setopt(c, CURLOPT_USERAGENT, "DiizerU-WiiU/0.1");
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L); // Deezer CDN may redirect
     // Throughput tuning (Wii U pulled only ~50 KB/s with defaults).
     curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 262144L);
     curl_easy_setopt(c, CURLOPT_TCP_NODELAY, 1L);

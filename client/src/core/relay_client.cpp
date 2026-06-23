@@ -402,4 +402,21 @@ std::optional<PlaybackState> RelayClient::seek(long position_ms) {
     return playback_command(b);
 }
 
+// ---- IMusicClient playback seam ----
+std::optional<StreamPlan> RelayClient::prepare_stream(const std::string& uri) {
+    // Relay path: tell the relay to fetch+decrypt+decode the track, then the
+    // console pulls the ADPCM stream. (Matches the original behavior.)
+    play_uri(uri);
+    StreamPlan p;
+    p.native = false;
+    p.base_url = base_url_;
+    p.bearer = bearer_;
+    p.fmt = "adpcm_ima";
+    return p;
+}
+
+bool RelayClient::seek_to(long position_ms) {
+    return seek(position_ms).has_value();
+}
+
 } // namespace core

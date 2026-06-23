@@ -18,6 +18,10 @@ public:
     std::optional<std::string> load_relay_url() const;
     bool save_relay_url(const std::string& url) const;
 
+    // arl.txt: the user's Deezer ARL for the native (relay-optional) path. If
+    // present, the console talks to Deezer directly and the relay is unused.
+    std::optional<std::string> load_arl() const;
+
     // session.json: { "relay_session_token": "..." }
     std::optional<std::string> load_token() const;
     bool save_token(const std::string& token) const;

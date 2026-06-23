@@ -11,7 +11,9 @@
 #include <vector>
 
 #include "adpcm.h"
+#include "deezer_decrypt.h"
 #include "iaudio_backend.h"
+#include "../../third_party/minimp3/minimp3.h"
 
 namespace audio {
 
@@ -20,9 +22,13 @@ public:
     explicit StreamPlayer(IAudioBackend& backend) : backend_(backend) {}
     ~StreamPlayer();
 
-    // base_url is the relay /v1 root; token is the relay session bearer.
-    void start(const std::string& base_url, const std::string& token,
-               const std::string& fmt = "pcm_s16le");
+    // Relay path: pull the relay's chunked PCM/ADPCM. base_url is /v1; token is
+    // the relay session bearer.
+    void start_relay(const std::string& base_url, const std::string& token,
+                     const std::string& fmt = "pcm_s16le");
+    // Native path: pull the encrypted Deezer track from the CDN, Blowfish-decrypt
+    // the stripes and MP3-decode on the console. Backend must be 44100 Hz stereo.
+    void start_deezer(const std::string& cdn_url, const std::string& track_id);
     void stop();
 
     bool running() const { return running_.load(); }
@@ -35,8 +41,11 @@ public:
     bool should_stop() const { return stop_.load(); }
     void add_bytes(size_t n) { bytes_.fetch_add((uint32_t)n); }
     bool adpcm() const { return adpcm_; }
+    bool deezer() const { return deezer_; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
+    // Decrypt + MP3-decode a network chunk into the backend. false -> abort.
+    bool feed_deezer(const uint8_t* data, size_t len);
 
 private:
     void run(std::string url, std::string token);
@@ -45,6 +54,11 @@ private:
     bool adpcm_ = false;
     AdpcmDecoder decoder_;
     std::vector<uint8_t> pcm_scratch_;
+    // native Deezer decode state
+    bool deezer_ = false;
+    DeezerStripeDecryptor dz_;
+    mp3dec_t mp3_;
+    std::vector<uint8_t> mp3in_; // decrypted, not-yet-decoded MP3 bytes (rolling)
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stop_{false};

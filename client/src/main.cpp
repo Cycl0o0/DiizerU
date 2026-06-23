@@ -15,6 +15,7 @@
 
 #include "audio/sdl_audio_backend.h"
 #include "audio/stream_player.h"
+#include "core/deezer_client.h"
 #include "core/relay_client.h"
 #include "core/session_store.h"
 #include "platform/platform.h"
@@ -64,39 +65,70 @@ int main(int /*argc*/, char** /*argv*/) {
 #else
     core::SessionStore store("sd:/diizeru");
 #endif
-    std::string relay_url = store.load_relay_url().value_or("");
-    // Migrate stale saved URLs from the old domain to the current default.
-    if (relay_url.empty() || relay_url.find("your-domain.example") != std::string::npos) {
-        relay_url = kDefaultRelayUrl;
-        store.save_relay_url(relay_url);
+
+    // Native (relay-optional) path: if the user dropped their Deezer ARL at
+    // sd:/diizeru/arl.txt, the console talks to Deezer directly — login, browse,
+    // decrypt and MP3-decode all happen here and the relay is never used.
+    std::unique_ptr<core::RelayClient> relay;
+    std::unique_ptr<core::DeezerClient> deezer;
+    core::IMusicClient* music = nullptr;
+    bool native = false;
+    std::string relay_url;
+
+    if (auto arl = store.load_arl()) {
+        platform::ensure_network_once(); // login() needs the network up
+        deezer = std::make_unique<core::DeezerClient>(*arl);
+        if (deezer->login()) {
+            native = true;
+            music = deezer.get();
+            std::printf("[main] native Deezer mode (user %s)\n", deezer->user_id().c_str());
+        } else {
+            std::printf("[main] ARL login failed; falling back to relay mode\n");
+            deezer.reset();
+        }
     }
-    core::RelayClient client(relay_url);
+
+    if (!native) {
+        relay_url = store.load_relay_url().value_or("");
+        // Migrate stale saved URLs from the old domain to the current default.
+        if (relay_url.empty() || relay_url.find("your-domain.example") != std::string::npos) {
+            relay_url = kDefaultRelayUrl;
+            store.save_relay_url(relay_url);
+        }
+        relay = std::make_unique<core::RelayClient>(relay_url);
+        music = relay.get();
+    }
 
     enum class Mode { Pairing, Home };
     Mode mode;
-    if (auto tok = store.load_token()) {
-        client.set_bearer(*tok);
+    if (native) {
+        mode = Mode::Home; // no pairing in native mode
+    } else if (auto tok = store.load_token()) {
+        relay->set_bearer(*tok);
         mode = Mode::Home;
     } else {
         mode = Mode::Pairing;
     }
 
-    auto pairing = std::make_unique<ui::PairingScreen>(client, store, text);
-    if (mode == Mode::Pairing) pairing->start();
+    // Pairing screen only exists in relay mode.
+    std::unique_ptr<ui::PairingScreen> pairing;
+    if (!native) {
+        pairing = std::make_unique<ui::PairingScreen>(*relay, store, text);
+        if (mode == Mode::Pairing) pairing->start();
+    }
 
-    // Audio: PCM s16le from the relay -> SDL backend (no decode on console).
+    // Audio backend. Native path decodes MP3 -> 44100 Hz stereo s16; relay path
+    // sends ADPCM that decodes to 22050 Hz (raw PCM is too heavy for the Wii U).
     audio::SdlAudioBackend backend;
-    // ADPCM stream is 22050 Hz stereo s16 after decode (raw PCM is too heavy for
-    // the Wii U's ~50 KB/s ceiling).
     audio::AudioFormat afmt;
-    afmt.sample_rate = 22050;
+    afmt.sample_rate = native ? 44100 : 22050;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;
 
     std::unique_ptr<ui::Browser> browser;
     if (mode == Mode::Home) {
-        browser = std::make_unique<ui::Browser>(client, text, backend, streamer, relay_url);
+        browser = std::make_unique<ui::Browser>(*music, text, backend, streamer, relay_url);
         browser->start();
     }
 
@@ -118,7 +150,7 @@ int main(int /*argc*/, char** /*argv*/) {
             pairing->render(v.renderer);
             if (pairing->result() == ui::PairingScreen::Result::Paired) {
                 mode = Mode::Home;
-                browser = std::make_unique<ui::Browser>(client, text, backend, streamer, relay_url);
+                browser = std::make_unique<ui::Browser>(*music, text, backend, streamer, relay_url);
                 browser->start();
                 last_ticks = SDL_GetTicks();
             }
@@ -127,14 +159,14 @@ int main(int /*argc*/, char** /*argv*/) {
             browser->update((float)(now - last_ticks));
             last_ticks = now;
             browser->render(v.renderer);
-            if (browser->wants_relink()) {
-                // drop token + pair again
+            // Re-link only applies to relay mode (native uses the SD-stored ARL).
+            if (browser->wants_relink() && !native) {
                 streamer.stop();
                 backend.clear();
                 store.clear_token();
-                client.set_bearer("");
+                relay->set_bearer("");
                 browser.reset();
-                pairing = std::make_unique<ui::PairingScreen>(client, store, text);
+                pairing = std::make_unique<ui::PairingScreen>(*relay, store, text);
                 pairing->start();
                 mode = Mode::Pairing;
             }

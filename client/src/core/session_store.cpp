@@ -56,6 +56,15 @@ bool SessionStore::save_relay_url(const std::string& url) const {
     return write_file(path("relay.cfg"), url + "\n");
 }
 
+std::optional<std::string> SessionStore::load_arl() const {
+    auto s = read_file(path("arl.txt"));
+    if (!s) return std::nullopt;
+    size_t a = s->find_first_not_of(" \t\r\n");
+    size_t b = s->find_last_not_of(" \t\r\n");
+    if (a == std::string::npos) return std::nullopt;
+    return s->substr(a, b - a + 1);
+}
+
 std::optional<std::string> SessionStore::load_token() const {
     auto s = read_file(path("session.json"));
     if (!s) return std::nullopt;

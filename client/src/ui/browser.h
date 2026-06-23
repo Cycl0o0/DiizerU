@@ -14,14 +14,14 @@
 #include "../audio/sdl_audio_backend.h"
 #include "../audio/stream_player.h"
 #include "../core/models.h"
-#include "../core/relay_client.h"
+#include "../core/music_client.h"
 #include "text.h"
 
 namespace ui {
 
 class Browser {
 public:
-    Browser(core::RelayClient& client, Text& text, audio::SdlAudioBackend& backend,
+    Browser(core::IMusicClient& client, Text& text, audio::SdlAudioBackend& backend,
             audio::StreamPlayer& streamer, std::string relay_url)
         : client_(client), text_(text), backend_(backend), streamer_(streamer),
           relay_url_(std::move(relay_url)) {}
@@ -83,7 +83,7 @@ private:
 
     bool credits_active_ = false;
 
-    core::RelayClient& client_;
+    core::IMusicClient& client_;
     Text& text_;
     audio::SdlAudioBackend& backend_;
     audio::StreamPlayer& streamer_;

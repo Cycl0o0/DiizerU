@@ -153,7 +153,7 @@ void Browser::handle_touch(int x, int y) {
             double target = frac * duration_ms_;
             elapsed_ms_ = target;
             backend_.clear();
-            client_.seek((long)target);
+            client_.seek_to((long)target);
         } else {
             toggle_pause();
         }
@@ -283,8 +283,13 @@ void Browser::play_worker() {
     platform::ensure_network_once();
     streamer_.stop();
     backend_.clear();
-    client_.play_uri(pending_uri_); // relay fetches+decrypts+decodes the track
-    streamer_.start(relay_url_, client_.bearer(), "adpcm_ima");
+    // Resolve how to stream: relay (ADPCM) or native (Deezer CDN + on-device decode).
+    if (auto plan = client_.prepare_stream(pending_uri_)) {
+        if (plan->native)
+            streamer_.start_deezer(plan->cdn_url, plan->track_id);
+        else
+            streamer_.start_relay(plan->base_url, plan->bearer, plan->fmt);
+    }
     play_done_.store(true);
     play_loading_.store(false);
 }
@@ -326,7 +331,7 @@ void Browser::do_seek(long delta_ms) {
     if (t > duration_ms_) t = duration_ms_;
     elapsed_ms_ = t;
     backend_.clear();             // drop buffered audio at the old position
-    client_.seek((long)t);        // relay seeks the decoded source
+    client_.seek_to((long)t);     // relay seeks; native path ignores (no-op)
 }
 
 // ---------------- album art ----------------
