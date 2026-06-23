@@ -52,7 +52,11 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
     // the producer feeds native-endian samples. Relay path stays s16le.
     want.format = fmt.native ? AUDIO_S16SYS : AUDIO_S16LSB;
     want.channels = (Uint8)fmt.channels;
-    want.samples = 2048;        // callback period (~46ms @44100)
+    // Large device buffer (~186ms @44100). The AX audio callback shares CPU1 with
+    // the 60fps render/main thread; a small buffer underruns whenever a render
+    // frame hitches, which sounds like a skip even with a full ring. A big SDL
+    // buffer lets the callback be late without the device running dry.
+    want.samples = 8192;
     want.callback = &SdlAudioBackend::audio_cb;
     want.userdata = this;
 
