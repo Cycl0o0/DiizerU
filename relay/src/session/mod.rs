@@ -21,9 +21,6 @@ pub struct PlayerSession {
     pub queue: Queue,
     /// Live audio source pulled by the /stream handler.
     pub source: Box<dyn AudioSource>,
-    /// Real Spotify player (feature = "librespot"); drives `source` when present.
-    #[cfg(feature = "librespot")]
-    pub librespot: Option<crate::audio::librespot_source::LibrespotPlayer>,
 }
 
 impl PlayerSession {

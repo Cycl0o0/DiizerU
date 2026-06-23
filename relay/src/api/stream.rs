@@ -49,14 +49,6 @@ pub async fn stream(
         None => return (StatusCode::SERVICE_UNAVAILABLE, "busy").into_response(),
     };
 
-    // With the librespot feature, ensure a real player is attached so /stream
-    // carries Spotify audio (the source is swapped to the ring buffer). Default
-    // build skips this and streams the tone source.
-    #[cfg(feature = "librespot")]
-    if let Err(e) = crate::api::playback::ensure_librespot(&state, &uid, &session).await {
-        return e.into_response();
-    }
-
     let frames_per_chunk = (SAMPLE_RATE as u64 * CHUNK_MS / 1000) as usize;
     let samples_per_chunk = frames_per_chunk * CHANNELS as usize;
     let fmt_name = encoder.format_name().to_string();

@@ -87,6 +87,12 @@ void Browser::back() {
 
 // ---------------- input ----------------
 void Browser::handle_button(Uint8 b) {
+    // Credits overlay: (+)/Start toggles it; B closes; swallow other input.
+    if (b == SDL_CONTROLLER_BUTTON_START) { credits_active_ = !credits_active_; return; }
+    if (credits_active_) {
+        if (b == SDL_CONTROLLER_BUTTON_B) credits_active_ = false;
+        return;
+    }
     if (kb_active_) {
         switch (b) {
             case SDL_CONTROLLER_BUTTON_DPAD_LEFT: if (kb_sel_ > 0) kb_sel_--; break;
@@ -446,10 +452,36 @@ void Browser::render(SDL_Renderer* r) {
         fill(r, kMuted, px, py, pw, 5);
         fill(r, kAccent, px, py, (int)(pw * frac), 5);
     } else {
-        text_.draw(r, "A: open/play   Y: play/pause   L/R: prev/next   (-): repeat   X: re-link",
+        text_.draw(r, "A play   Y pause   L/R skip   (-) repeat   (+) credits   X re-link",
                    40, by + 40, kMuted, Size::Small);
     }
+    if (credits_active_) render_credits(r);
     SDL_RenderPresent(r);
+}
+
+void Browser::render_credits(SDL_Renderer* r) {
+    const int W = platform::kLogicalW, H = platform::kLogicalH;
+    // dim the screen
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 220);
+    SDL_Rect full{0, 0, W, H};
+    SDL_RenderFillRect(r, &full);
+    fill(r, kAccent, 0, 0, W, 8);
+
+    int y = 150;
+    text_.draw_centered(r, "DiizerU", W, y, kAccent, Size::Huge);
+    y += 130;
+    text_.draw_centered(r, "Made with <3 by Cycl0o0", W, y, kText, Size::Large);
+    y += 90;
+    text_.draw_centered(r, "Not affiliated with Deezer or Nintendo.", W, y, kMuted, Size::Small);
+    y += 70;
+    text_.draw_centered(r, "Thanks: devkitPro & wut, SDL2, libcurl, cJSON,", W, y, kMuted, Size::Small);
+    y += 34;
+    text_.draw_centered(r, "the Deezer homebrew community, Roboto font (Apache-2.0).", W, y, kMuted, Size::Small);
+    y += 60;
+    text_.draw_centered(r, "AGPL-3.0  -  github.com/Cycl0o0/DiizerU", W, y, kMuted, Size::Small);
+    y += 70;
+    text_.draw_centered(r, "Press B to close", W, y, kAccent, Size::Small);
 }
 
 void Browser::render_keyboard(SDL_Renderer* r) {

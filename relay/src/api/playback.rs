@@ -46,8 +46,6 @@ pub async fn command(
     Json(cmd): Json<PlaybackCommand>,
 ) -> ApiResult<Json<PlaybackState>> {
     let s = session_or_busy(&state, &uid)?;
-    #[cfg(feature = "librespot")]
-    ensure_librespot(&state, &uid, &s).await?;
 
     // Deezer: on play_uri, fetch+decrypt+decode the track and swap it in as the
     // session's audio source (done before locking — it awaits network/decode).
@@ -70,8 +68,6 @@ pub async fn command(
     let mut g = s.lock().unwrap();
     g.last_active = crate::now_epoch();
     apply_command(&mut g, &cmd);
-    #[cfg(feature = "librespot")]
-    drive_librespot(&g, &cmd);
     let pb = g.playback.clone();
     Ok(Json(pb))
 }
@@ -105,100 +101,6 @@ async fn fetch_deezer_pcm(state: &AppState, uid: &str, track_id: &str) -> ApiRes
         .map_err(|e| ApiError::Upstream(e.to_string()))?;
     tracing::info!(track = %track_id, samples = pcm.len(), "deezer track ready");
     Ok(pcm)
-}
-
-/// Lazily connect a real librespot player for this user and swap the session's
-/// audio source to the ring buffer it feeds. Idempotent.
-#[cfg(feature = "librespot")]
-pub(crate) async fn ensure_librespot(
-    state: &AppState,
-    uid: &str,
-    s: &std::sync::Arc<std::sync::Mutex<crate::session::PlayerSession>>,
-) -> ApiResult<()> {
-    if s.lock().unwrap().has_librespot() {
-        return Ok(());
-    }
-    let token = crate::proxy::access_token(state, uid).await?;
-    // Per-user librespot credentials cache (cached creds can fetch audio keys).
-    let cache_dir = std::env::var("LIBRESPOT_CACHE_DIR")
-        .ok()
-        .map(|b| std::path::Path::new(&b).join(uid));
-    let lp = crate::audio::librespot_source::LibrespotPlayer::connect(&token, cache_dir)
-        .await
-        .map_err(|e| ApiError::Upstream(e.to_string()))?;
-    let src = lp.source();
-    {
-        let mut g = s.lock().unwrap();
-        if g.has_librespot() {
-            return Ok(()); // raced; another caller attached
-        }
-        g.source = Box::new(src);
-        g.librespot = Some(lp);
-    }
-
-    // Until the browse/queue UI exists (M6), auto-start a track so the console
-    // produces real audio on play. Prefer the user's first liked track; fall
-    // back to a default URI if the library scope isn't granted (librespot loads
-    // by URI via its own session, no Web API scope needed).
-    let track = match crate::proxy::favorites(state, uid).await {
-        Ok(tracks) => tracks.into_iter().find(|t| !t.uri.is_empty()),
-        Err(_) => None,
-    };
-    let uri = track
-        .as_ref()
-        .map(|t| t.uri.clone())
-        .unwrap_or_else(|| "spotify:track:0VjIjW4GlUZAMYd2vXMi3b".to_string()); // Blinding Lights
-    let mut g = s.lock().unwrap();
-    if let Some(lp) = g.librespot.as_ref() {
-        let _ = lp.load_uri(&uri, true, 0);
-    }
-    if let Some(t) = track {
-        g.queue.items = vec![t.clone()];
-        g.queue.current_index = 0;
-        g.playback.duration_ms = t.duration_ms;
-        g.playback.track = Some(t);
-    }
-    g.playback.state = crate::model::PlayerState::Playing;
-    Ok(())
-}
-
-/// Translate a control command into librespot player calls. Runs after
-/// `apply_command` has updated our state machine, so `s.playback`/`s.queue`
-/// already reflect the target state.
-#[cfg(feature = "librespot")]
-fn drive_librespot(s: &crate::session::PlayerSession, cmd: &PlaybackCommand) {
-    use PlaybackAction::*;
-    let Some(lp) = s.librespot.as_ref() else {
-        return;
-    };
-    match cmd.action {
-        Play => lp.play(),
-        Pause => lp.pause(),
-        Toggle => match s.playback.state {
-            PlayerState::Playing => lp.play(),
-            _ => lp.pause(),
-        },
-        Seek => {
-            if let Some(p) = cmd.position_ms {
-                lp.seek(p as u32);
-            }
-        }
-        Next | Prev => {
-            if let Some(t) = s.queue.items.get(s.queue.current_index) {
-                let _ = lp.load_uri(&t.uri, true, 0);
-            }
-        }
-        PlayUri => {
-            let uri = cmd
-                .uri
-                .clone()
-                .or_else(|| s.queue.items.get(s.queue.current_index).map(|t| t.uri.clone()));
-            if let Some(u) = uri {
-                let _ = lp.load_uri(&u, true, 0);
-            }
-        }
-        SetRepeat | SetShuffle => {}
-    }
 }
 
 fn apply_command(s: &mut crate::session::PlayerSession, cmd: &PlaybackCommand) {

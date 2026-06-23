@@ -1,92 +1,54 @@
-> **Note (beta):** DiizerU now streams from **Deezer** (per-user ARL token, decrypted server-side). Some sections below describe the original Spotify/librespot design and are kept for historical context; the security model (encrypted-at-rest token, never logged, allowlist, kill switch) applies to the Deezer ARL the same way.
+# Security & Privacy
 
-# DiizerU — Security & Privacy
+DiizerU is a hobby beta. This is the threat model and what the relay does with
+your data. The short version: **self-host if you can** — then nothing sensitive
+ever leaves your machine.
 
-> English first. *FR* summary inline.
+## What's sensitive
 
-## Threat model (scope)
+Your **Deezer ARL** — the session token from your browser cookies. It grants
+access to your Deezer account, so treat it like a password.
 
-- **In scope:** protecting beta users' Spotify tokens, preventing non-invited
-  access, keeping the Wii U free of any Spotify credential, resisting basic
-  abuse (auth/pairing brute force) of a single-VPS beta.
-- **Out of scope:** nation-state attackers, physical access to the VPS, Spotify
-  changing terms. This is a **private beta, grey-zone hobby project** — see the
-  README's limitations section.
+## What the relay does with it
 
-## 1. Spotify credentials — NON-NEGOTIABLE
+- **Encrypted at rest.** The ARL is sealed with XChaCha20-Poly1305 before it
+  touches disk. The key (`DIIZERU_MASTER_KEY`) lives in the environment, outside
+  the repo and outside the data store.
+- **Never logged.** No log line prints the ARL, at any level.
+- **Stays server-side.** The console never receives the ARL or any Deezer
+  credential — only an opaque relay session token it uses as a bearer.
+- **Revocable.** `POST /v1/admin/revoke/{user_id}` deletes the stored token and
+  kills the session. `POST /v1/admin/killswitch` stops everything at once.
 
-- OAuth 2.0 **Authorization Code + PKCE** only. The user always authenticates on
-  the **real** `accounts.spotify.com`. We never render a Spotify password field.
-- Each user authorizes **their own** Premium account. No shared account, no DRM
-  bypass — librespot streams what the user is already entitled to.
-- **The Wii U never receives a Spotify token.** It holds only an opaque relay
-  session token. All Spotify API/audio access happens server-side.
+## Transport & access
 
-*FR : OAuth PKCE sur le vrai site Spotify, jamais de mot de passe collecté. La
-console ne reçoit qu'un token de session relais, jamais un token Spotify.*
+- TLS on all public endpoints (Caddy/Let's Encrypt in the Docker deploy, or your
+  own reverse proxy).
+- The admin API is behind a separate token (`DIIZERU_ADMIN_TOKEN`), never the
+  user path.
+- Central mode is invite-gated (single-use or time-limited multi-use codes). In
+  self-hosted mode you're the implicit allowlist; no invites.
 
-## 2. Token storage — encrypted at rest
+## Privacy
 
-- Refresh tokens are encrypted before touching disk using libsodium
-  `crypto_secretbox` (XSalsa20-Poly1305). Key material lives **outside the repo**,
-  injected via `DIIZERU_MASTER_KEY` env / Docker secret.
-- Access tokens are kept in memory only; refreshed on demand.
-- DB stores: `user_id`, `enc_refresh_token`, `nonce`, `created_at`,
-  `allowlist_status`. **Never** a plaintext token.
-- Key rotation: `enc_refresh_token` carries a key-id prefix; rotating the master
-  key re-wraps lazily on next refresh.
+- The only personal data stored is your encrypted ARL and a Deezer user id,
+  needed to key the session and the allowlist.
+- No listening history is persisted beyond the live now-playing state.
 
-## 3. Allowlist & onboarding
+## GDPR-ish note
 
-- Onboarding is gated by a **single-use invite code** (relay-generated) OR an
-  explicit Spotify user-id allowlist. A non-listed account cannot complete the
-  OAuth callback — the relay drops the exchange and stores nothing.
-- Admin endpoints (`/admin/*`) use a **separate** bearer credential
-  (`DIIZERU_ADMIN_TOKEN`), never the user auth path, and are rate-limited.
+If you run the **central** relay for others, you're the data controller for their
+encrypted ARLs and ids; lawful basis is their consent (they accept the invite and
+paste their own token), and erasure is the revoke endpoint. In **self-hosted**
+mode there's no third party — it's just your own data on your own box.
 
-## 4. Revocation & kill switch
+## Reporting
 
-- `POST /admin/revoke/{user_id}`: deletes encrypted tokens, calls Spotify token
-  revocation, kills the live librespot session, invalidates the relay session
-  token. Effective immediately.
-- **Kill switch:** `POST /admin/killswitch` (or `touch KILLSWITCH` file checked
-  at startup + SIGHUP): refuse all new sessions, tear down all live sessions,
-  return `503` everywhere except `/admin`. One command stops the service.
+Open a GitHub issue. No bug bounty — it's a hobby project.
 
-*FR : révocation immédiate (tokens supprimés + session tuée) et kill switch
-global pour tout couper vite.*
+## The honest caveat
 
-## 5. Transport & rate limiting
-
-- TLS on every public endpoint (Caddy auto Let's Encrypt, see `/deploy`).
-- HSTS, no plaintext fallback.
-- Rate limits: per-IP on `/v1/pair/*` and OAuth callback; exponential backoff on
-  failed invite-code attempts; global cap via `MAX_CONCURRENT_SESSIONS`.
-
-## 6. Logging — privacy-aware
-
-- Structured logs (`tracing`) with a redaction layer: tokens, codes, and
-  `Authorization` headers are filtered before emit.
-- No PII beyond Spotify `user_id` (needed for allowlist). No track-level history
-  persisted beyond the live now-playing state.
-- Log level for token/auth modules defaults to `info`; secrets never logged even
-  at `trace`.
-
-## 7. GDPR / data-controller posture
-
-- For the central deployment, **the operator is the data controller** for invited
-  users' tokens and `user_id`s.
-- Lawful basis: consent (the user accepts the invite and authorizes via Spotify).
-- Data minimization: only tokens + `user_id` + minimal session metadata.
-- Right to erasure: `POST /admin/revoke/{user_id}` deletes all stored data for
-  that user.
-- In **self-hosted** mode the user is their own controller — no third-party data.
-
-*FR : en mode central tu es responsable de traitement (tokens + user_id des
-invités). Base légale : consentement. Effacement via la révocation. En
-self-hosted, chacun est son propre responsable.*
-
-## 8. Reporting
-
-This is a private hobby beta. Report issues via GitHub
-(GitHub issues). No bug-bounty.
+DiizerU reaches Deezer over the unofficial streaming path and decrypts your own
+entitled content server-side. That almost certainly breaks Deezer's terms for
+third-party clients. Personal/educational use, your own Premium account, your own
+risk.

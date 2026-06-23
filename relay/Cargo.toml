@@ -2,16 +2,14 @@
 name = "diizeru-relay"
 version = "0.1.0"
 edition = "2021"
-description = "DiizerU relay: OAuth + allowlist + per-user librespot session -> PCM stream"
+description = "DiizerU relay: Deezer source + per-user session -> ADPCM stream for the Wii U"
 license = "AGPL-3.0-or-later"
 
 [features]
-# Default build is curl-testable today via the built-in tone AudioSource.
-# Enable `librespot` for the real per-user Spotify audio source (heavy compile).
-default = []
-librespot = ["dep:librespot-core", "dep:librespot-playback"]
-# Deezer audio source: client-side-derivable key (sidesteps Spotify's audio-key
-# block). Downloads encrypted MP3/FLAC, Blowfish-decrypts, decodes via symphonia.
+# Deezer is the default audio source. It downloads the encrypted MP3/FLAC,
+# derives the key client-side, Blowfish-decrypts, and decodes via symphonia.
+# Build with `--no-default-features` for a tone-only test relay.
+default = ["deezer"]
 deezer = ["dep:md-5", "dep:blowfish", "dep:symphonia"]
 
 [dependencies]
@@ -38,11 +36,6 @@ urlencoding = "2"
 async-stream = "0.3"
 bytes = "1"
 futures-core = "0.3"
-
-# Real audio source (feature = "librespot"). git main may carry audio-key fixes
-# not in 0.8.0. rustls + no system audio backends (we provide our own Sink).
-librespot-core = { git = "https://github.com/librespot-org/librespot", optional = true, default-features = false, features = ["rustls-tls-native-roots"] }
-librespot-playback = { git = "https://github.com/librespot-org/librespot", optional = true, default-features = false, features = ["rustls-tls-native-roots"] }
 
 # Deezer source (feature = "deezer").
 md-5 = { version = "0.10", optional = true }

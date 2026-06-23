@@ -79,6 +79,9 @@ private:
     // keyboard
     void kb_press();
     void render_keyboard(SDL_Renderer* r);
+    void render_credits(SDL_Renderer* r);
+
+    bool credits_active_ = false;
 
     core::RelayClient& client_;
     Text& text_;

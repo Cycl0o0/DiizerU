@@ -23,7 +23,7 @@ class RelayClient {
 public:
     explicit RelayClient(std::string base_url);
 
-    // Bearer is the opaque relay session token (NOT a Spotify token).
+    // Bearer is the opaque relay session token (NOT a Deezer token).
     void set_bearer(std::string token) { bearer_ = std::move(token); }
     const std::string& bearer() const { return bearer_; }
     const std::string& base_url() const { return base_url_; }

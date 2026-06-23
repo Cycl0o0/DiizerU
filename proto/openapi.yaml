@@ -8,7 +8,7 @@ info:
     (only base URL / onboarding differ). Major version pinned in the path (`/v1`).
 
     Auth: after pairing, the client sends `Authorization: Bearer <relay_session_token>`.
-    This token is NOT a Spotify token. Spotify tokens never leave the relay.
+    This token is NOT a Deezer token. Deezer tokens never leave the relay.
 servers:
   - url: https://your-domain.example/v1
     description: central beta
@@ -87,7 +87,7 @@ paths:
   /me:
     get:
       tags: [meta]
-      summary: Current paired user profile (no Spotify token exposed)
+      summary: Current paired user profile (no Deezer token exposed)
       responses:
         "200":
           description: ok
@@ -99,7 +99,7 @@ paths:
   /search:
     get:
       tags: [browse]
-      summary: Search (proxied to Spotify Web API server-side)
+      summary: Search (proxied to Deezer API server-side)
       parameters:
         - { name: q, in: query, required: true, schema: { type: string } }
         - name: type
@@ -269,7 +269,7 @@ paths:
       description: |
         Returns an endless chunked body of raw audio in the negotiated format.
         v1 default is `pcm_s16le` 44.1kHz stereo (~1.41 Mbps). The client pulls
-        this into its ring buffer; the relay drives librespot from playback cmds.
+        this into its ring buffer; the relay drives the Deezer source from playback cmds.
       parameters:
         - name: fmt
           in: query
@@ -317,7 +317,7 @@ paths:
   /admin/allow/{user_id}:
     put:
       tags: [admin]
-      summary: Add a Spotify user-id to allowlist
+      summary: Add a Deezer user-id to allowlist
       security: [{ adminAuth: [] }]
       parameters:
         - { name: user_id, in: path, required: true, schema: { type: string } }
@@ -415,7 +415,7 @@ components:
           enum: [pending, approved, denied, expired]
         relay_session_token:
           type: string
-          description: present only when status=approved; opaque, NOT a Spotify token
+          description: present only when status=approved; opaque, NOT a Deezer token
 
     Me:
       type: object
@@ -450,7 +450,7 @@ components:
       type: object
       properties:
         id: { type: string }
-        uri: { type: string, example: "spotify:track:..." }
+        uri: { type: string, example: "deezer:track:..." }
         name: { type: string }
         duration_ms: { type: integer }
         artists: { type: array, items: { $ref: "#/components/schemas/Artist" } }

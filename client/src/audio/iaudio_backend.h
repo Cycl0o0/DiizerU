@@ -1,6 +1,6 @@
 // audio/IAudioBackend — abstracts PCM sink so the streaming player doesn't know
 // about AX/sndcore2 vs SDL2 (ARCHITECTURE §"Audio"). The relay sends raw PCM
-// s16le 44.1k stereo; backends just queue and play it. No Spotify crypto/decode
+// s16le 44.1k stereo; backends just queue and play it. No Deezer crypto/decode
 // on the console.
 #pragma once
 

@@ -17,8 +17,8 @@ differ, never the protocol.
 ## Key invariants
 
 1. The client sends `Authorization: Bearer <relay_session_token>` (from
-   `/pair/poll`). **This is never a Spotify token.**
-2. All Spotify Web API access is proxied server-side. Spotify tokens never cross
+   `/pair/poll`). **This is never a Deezer token.**
+2. All Deezer API access is proxied server-side. Deezer tokens never cross
    this boundary.
 3. Audio is an opaque chunked byte stream; format negotiated via `?fmt=`.
    v1: `pcm_s16le` 44.1kHz stereo. Adding Opus = new `fmt` value, no break.

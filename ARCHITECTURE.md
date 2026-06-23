@@ -1,173 +1,68 @@
-> **Note (beta):** DiizerU now streams from **Deezer** (per-user ARL token, decrypted server-side). Some sections below describe the original Spotify/librespot design and are kept for historical context; the security model (encrypted-at-rest token, never logged, allowlist, kill switch) applies to the Deezer ARL the same way.
+# Architecture
 
-# DiizerU — Architecture
-
-> English first. Résumé français en fin de chaque section (*FR*).
-
-## 1. Overview
-
-DiizerU is a two-component system that lets a Wii U homebrew app act as a
-front-end for a user's **own** Spotify Premium account.
+Two components, one versioned API between them.
 
 ```
-┌─────────────┐      device-code pairing       ┌──────────────────────────┐
-│  Wii U      │ ─────────────────────────────► │  RELAY  (Rust / VPS)     │
-│  client     │                                 │                          │
-│  (wut/SDL2) │  ◄── REST + WS control ───────► │  ┌────────────────────┐  │
-│             │                                 │  │ axum HTTP/WS API   │  │
-│             │  ◄── HTTP chunked PCM ───────── │  ├────────────────────┤  │
-└─────────────┘                                 │  │ Session manager    │  │
-                                                │  │  (1 librespot/user)│  │
-                                                │  ├────────────────────┤  │
-                                                │  │ OAuth + allowlist  │  │
-                                                │  │ Token store (enc.) │  │
-                                                │  │ Spotify Web API    │  │
-                                                │  │  proxy             │  │
-                                                │  └────────────────────┘  │
-                                                └────────────┬─────────────┘
-                                                             │ OAuth + audio
-                                                             ▼
-                                                   accounts.spotify.com
-                                                   api.spotify.com
-                                                   Spotify AP (librespot)
+Wii U client (wut + SDL2)            Relay (Rust, axum + tokio)
+  pairing / browse / controls  ─────▶  /v1 REST  ┐
+  ADPCM audio  ◀─────────────────────  /v1/stream ┘
+                                         │
+                                         ▼  ARL (encrypted at rest)
+                                       Deezer: gw-light + media API
+                                       resolve → download → Blowfish
+                                       decrypt → decode → re-encode (ADPCM)
 ```
 
-**Why a relay?** The Wii U cannot run librespot (no Rust toolchain target, no
-Spotify DRM/Vorbis pipeline, weak CPU). The relay holds the Spotify session,
-decodes audio, and hands the console raw PCM. The console never sees a Spotify
-token.
+## Why a relay
 
-*FR : la Wii U ne peut pas faire tourner librespot ni gérer le DRM Spotify. Le
-relais détient la session, décode l'audio, envoie du PCM brut. La console ne
-voit jamais de token.*
+The Wii U can't reasonably do the Deezer streaming path itself (HTTP, TLS, the
+Blowfish stripe-decrypt, MP3/FLAC decoding) and shouldn't hold your credentials.
+The relay does all of that and hands the console a tiny, already-decoded ADPCM
+stream. The console only plays bytes and draws the UI — no credentials, no DRM.
 
-## 2. PRIME DIRECTIVE — central vs self-hosted seam
+## Relay (`relay/`)
 
-The central relay is a **deployment choice, not a client dependency**. The client
-talks to a relay through the versioned API in [`/proto`](./proto). Nothing in the
-protocol assumes "one shared server".
-
-A single config flag drives the whole difference:
-
-```
-RELAY_MODE = central | self-hosted
-```
-
-| Concern        | central                              | self-hosted                          |
-|----------------|--------------------------------------|--------------------------------------|
-| Relay URL      | `https://your-domain.example`       | user-supplied (`sd:/diizeru/relay.cfg`) |
-| Onboarding     | invite code → our allowlist          | user owns the box, allowlist = {self}|
-| Spotify app    | our client_id                        | user's own client_id (their dashboard)|
-| Protocol       | **identical**                        | **identical**                        |
-| Client code    | **identical**                        | **identical**                        |
-
-The seam is enforced by: (a) the client only ever reads `relay_base_url` from
-config — never a compile-time constant; (b) the relay reads `RELAY_MODE` at
-startup and only changes onboarding/URL behavior, never wire format. Switching a
-user to self-hosted = ship them the relay container + a one-line config on SD.
-
-*FR : le relais central est un choix de déploiement. Le flag `RELAY_MODE` ne
-change que l'URL et l'onboarding, jamais le protocole. Passer en self-hosted =
-livrer le conteneur relais + une ligne de config sur SD, sans retoucher le
-client.*
-
-## 3. Repository layout
-
-```
-/proto    OpenAPI 3.1 + WS event schema — SOURCE OF TRUTH for client↔relay
-/relay    Rust service (axum, tokio, librespot-as-library)
-/client   Wii U homebrew (devkitPro + wut, C++17, SDL2, libcurl)
-/deploy   docker-compose, Caddy TLS reverse proxy, VPS scripts
-/docs     diagrams, notes
-README.md / ARCHITECTURE.md / SECURITY.md
-```
-
-## 4. Relay internals
-
-| Module            | Responsibility                                                   |
-|-------------------|-----------------------------------------------------------------|
-| `api/`            | axum routers: REST control + WS, pairing, browse proxy, stream  |
-| `auth/`           | OAuth 2.0 Auth Code + PKCE, device-code pairing, admin auth      |
-| `store/`          | allowlist + encrypted token store (libsodium sealed/secretbox)   |
-| `session/`        | per-user librespot session lifecycle, inactivity GC, max-concurrency |
-| `audio/`          | `AudioSource` (librespot) → `StreamEncoder` (PCM now, Opus later)|
-| `proxy/`          | thin proxy of Spotify Web API for search/browse (token stays here)|
-
-### 4.1 Session manager
-
-- One librespot `Session` per authenticated user, keyed by Spotify user-id.
-- Started lazily when the user's console connects; destroyed after
-  `SESSION_IDLE_TIMEOUT` (configurable).
-- `MAX_CONCURRENT_SESSIONS` caps load on the beta VPS. New connections past the
-  cap get `503 Busy`.
-- Resource bounds (CPU/mem) are enforced at the **container** layer in `/deploy`
-  (cgroups via compose `deploy.resources`), plus an in-process per-session
-  buffer cap so one stream can't balloon memory.
-
-### 4.2 Audio path (v1)
-
-```
-librespot decode (Ogg Vorbis → f32) ─► AudioSource ─► StreamEncoder ─► HTTP chunked
-                                                          │
-                                            v1: PcmS16LE (44.1k stereo) ~1.41 Mbps
-                                            v2: OpusEncoder (~96-128 kbps)
-```
-
-`StreamEncoder` is a trait. The client negotiates format via the `Accept`-like
-`?fmt=pcm_s16le` query param (default `pcm_s16le`). Adding Opus later = new
-encoder impl + new fmt value; **client audio code already abstracts the decoder
-behind `IAudioBackend`**, so only a new decode path is added, no protocol break.
-
-Bandwidth: `44100 * 2ch * 16bit = 1.411 Mbit/s` per listener. Documented so the
-VPS egress is sized (`MAX_CONCURRENT_SESSIONS * 1.41 Mbps`).
-
-## 5. Client internals
-
-```
-core/      API client, data models, player state machine, queue, cache
-audio/     IAudioBackend (AX/sndcore2 or SDL2_mixer), ring buffer, PCM pull
-ui/        SDL2 screens, mini-player, focus/nav, on-screen keyboard
-platform/  wut init, SD mount, network init, input (VPAD/KPAD)
-```
-
-Strict rule: **no business logic in `ui/`**. UI observes `core/` state and emits
-intents. Network fetches are async (worker thread + queue) so the 60fps render
-loop never blocks.
-
-### Player state machine
-
-```
-Stopped ──play──► Loading ──ready──► Playing ⇄ Paused
-   ▲                 │                  │
-   └──────error──────┴─────error────────┴──► Error ──retry──► Loading
-```
-
-## 6. Protocol seam (`/proto`)
-
-OpenAPI 3.1 for REST + a versioned WS event schema. Versioned under
-`/v1`. Breaking changes bump to `/v2`; relay can serve both during migration.
-The client pins a major version and feature-detects via `GET /v1/capabilities`.
-
-## 7. Data flow: first launch → playing
-
-1. Console boots client → no session on SD → shows **device code**.
-2. Console `POST /v1/pair/start` → relay returns `{ device_code, user_code,
-   verify_url, interval }`. TV shows `user_code` + `your-domain.example`.
-3. User opens verify URL on phone, enters `user_code`, completes Spotify OAuth
-   (real accounts.spotify.com) **iff** their account is on the allowlist.
-4. Console polls `POST /v1/pair/poll` → gets a long-lived **relay session token**
-   (NOT a Spotify token). Persisted to `sd:/diizeru/session.json`.
-5. Console uses relay token for all REST/WS + the PCM stream.
-6. librespot session spins up; `GET /v1/stream?fmt=pcm_s16le` plays.
-
-## 8. Tech choices & justification
-
-| Choice | Why |
+| Module | Job |
 |--------|-----|
-| Rust + axum + tokio | librespot is Rust; one async runtime end-to-end; strong typing for token handling |
-| librespot **as crate** | clean per-user `Session` objects, no fragile CLI process babysitting |
-| PCM first | zero decode on Wii U → fastest path to audible; Opus deferred behind trait |
-| device-code pairing | console has no keyboard-friendly OAuth; phone does the hard part |
-| Caddy TLS | automatic Let's Encrypt, tiny config, fits single-VPS beta |
-| OpenAPI in `/proto` | one source of truth, enables self-hosted seam, client/relay stay in sync |
-| SDL2 + libcurl on wut | mature wut ports, fastest route to a real GUI |
+| `api/` | axum routers: pairing, browse/search, playback/queue, the audio stream, admin |
+| `deezer/` | ARL login (`client`), key derivation + Blowfish decrypt (`crypto`), MP3/FLAC decode (`decode`), `AudioSource` (`source`), browse mapping (`proxy`) |
+| `audio/` | `AudioSource` + `StreamEncoder` traits; PCM and IMA-ADPCM encoders |
+| `session/` | one player session per user, idle GC, max-concurrency cap |
+| `store/` | allowlist, invite codes, encrypted token (ARL) store, relay sessions |
+| `auth/pairing` | device-code pairing state |
+
+Audio path: Deezer track → decrypted MP3/FLAC → decoded to 44.1k f32 → IMA ADPCM
+decimated to 22050 Hz stereo (~22 KB/s) → HTTP chunked to the console. ADPCM
+keeps bandwidth tiny, which matters on the Wii U's Wi-Fi. The `StreamEncoder`
+trait leaves room for other formats without touching the client.
+
+## Client (`client/`)
+
+```
+core/      relay API client (libcurl + cJSON), models, session store
+audio/     IAudioBackend (SDL2), streaming player, IMA ADPCM decoder
+ui/        pairing screen, browser/player, on-screen keyboard, text, credits
+platform/  wut init, SD, network (nn::ac), input, SDL video
+```
+
+No business logic in `ui/`; network and track fetches run on worker threads so
+the 60 fps loop never blocks. Bundled assets (font, CA bundle, icon) are embedded
+in the binary — the `.wuhb` content mount isn't reachable via `fopen` on the Wii U.
+
+## The seam (`proto/`)
+
+The client↔relay API is an OpenAPI spec under `/v1`. The client only ever reads
+its relay URL from config, so the exact same build works against the central
+relay or a self-hosted one — only the URL and onboarding differ
+(`RELAY_MODE = central | self-hosted`). The relay is a deployment choice, not a
+hard dependency.
+
+## Data flow: first launch → playing
+
+1. Console has no saved session → shows a device code on the TV.
+2. User opens the relay's `/v1/pair` on a phone, enters the code + Deezer ARL
+   (+ invite, in central mode).
+3. Relay validates the ARL, stores it encrypted, issues an opaque relay session
+   token to the console.
+4. Console browses (relay proxies Deezer) and plays: `play_uri` makes the relay
+   fetch + decrypt + decode the track and stream it as ADPCM.

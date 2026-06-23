@@ -143,6 +143,8 @@ code{{background:#26262e;padding:.1rem .3rem;border-radius:4px}}</style></head>
 <label>Deezer ARL<textarea name="arl" placeholder="paste the arl cookie value" autocapitalize=off autocorrect=off spellcheck=false required></textarea></label>
 <button type="submit">Link Wii U</button>
 </form>
+<p style="text-align:center;color:#777;font-size:.8rem;margin-top:1.5rem">
+Made with &lt;3 by Cycl0o0 &middot; Not affiliated with Deezer or Nintendo</p>
 </main></body></html>"#
     ))
 }

@@ -8,9 +8,6 @@
 
 pub mod tone;
 
-#[cfg(feature = "librespot")]
-pub mod librespot_source;
-
 pub const SAMPLE_RATE: u32 = 44_100;
 pub const CHANNELS: u16 = 2;
 

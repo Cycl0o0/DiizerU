@@ -133,6 +133,11 @@ void PairingScreen::render(SDL_Renderer* r) {
         text_.draw_centered(r, "Connecting to relay...", W, 340, kMuted, Size::Medium);
     }
 
+    // attribution
+    const int H = platform::kLogicalH;
+    text_.draw_centered(r, "Made with <3 by Cycl0o0", W, H - 90, kMuted, Size::Small);
+    text_.draw_centered(r, "Not affiliated with Deezer or Nintendo", W, H - 58, kMuted, Size::Small);
+
     SDL_RenderPresent(r);
 }
 

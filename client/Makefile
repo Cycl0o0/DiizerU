@@ -21,7 +21,9 @@ INCLUDES := src include third_party
 APP_CONTENT   := $(TOPDIR)/content
 APP_NAME      := DiizerU
 APP_SHORTNAME := DiizerU
-APP_AUTHOR    := cycl0o0
+APP_AUTHOR    := Cycl0o0
+# Homebrew icon shown in the launcher (PNG). Optional — only used if present.
+APP_ICON      := $(if $(wildcard $(TOPDIR)/meta/icon.png),$(TOPDIR)/meta/icon.png,)
 #---------------------------------------------------------------------------------
 
 ARCH := -mcpu=750 -meabi -mhard-float
