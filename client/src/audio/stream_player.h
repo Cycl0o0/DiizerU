@@ -5,6 +5,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -63,6 +64,11 @@ private:
     DeezerStripeDecryptor dz_;
     mp3dec_t mp3_;
     std::vector<uint8_t> mp3in_; // decrypted, not-yet-decoded MP3 bytes (rolling)
+    // wall-clock pacing (native): feed audio at ~real time so the Wii U never
+    // gets a backlog to flush fast at the start of a track.
+    bool pace_started_ = false;
+    std::chrono::steady_clock::time_point pace_start_;
+    uint64_t pace_frames_ = 0; // total per-channel frames queued
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stop_{false};

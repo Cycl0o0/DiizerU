@@ -122,9 +122,9 @@ int main(int /*argc*/, char** /*argv*/) {
     audio::SdlAudioBackend backend;
     audio::AudioFormat afmt;
     afmt.sample_rate = native ? 44100 : 22050;
-    // Shallow prebuffer: a deep queue makes the Wii U audio drain too fast at
-    // the start of a track; the native path self-paces to keep it shallow.
-    afmt.prebuffer_ms = native ? 800 : 1000;
+    // Native path starts the device almost immediately (small paused backlog =
+    // small startup flush) and relies on wall-clock pacing for the cushion.
+    afmt.prebuffer_ms = native ? 250 : 1000;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;

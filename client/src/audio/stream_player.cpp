@@ -74,6 +74,8 @@ void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& t
     dz_.init(track_id);
     mp3dec_init(&mp3_);
     mp3in_.clear();
+    pace_started_ = false;
+    pace_frames_ = 0;
     running_.store(true);
     thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
 }
@@ -112,6 +114,23 @@ bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
             }
         }
         if (!backend_.queue(out.data(), o)) return false;
+
+        // Wall-clock pace: hold the queue ~700ms ahead of real time. Without this
+        // the Wii U flushes a buffered backlog at the start of a track (audible as
+        // an ultra-fast burst) before settling. Feeding at real time keeps the
+        // backlog tiny so there's nothing to flush.
+        pace_frames_ += (uint64_t)samples; // per-channel frames
+        if (!pace_started_) { pace_started_ = true; pace_start_ = std::chrono::steady_clock::now(); }
+        for (;;) {
+            if (should_stop()) break;
+            double queued_ms = (double)pace_frames_ * 1000.0 / 44100.0;
+            double elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - pace_start_).count();
+            if (queued_ms - elapsed_ms > 700.0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            else
+                break;
+        }
     }
     if (pos > 0) mp3in_.erase(mp3in_.begin(), mp3in_.begin() + pos);
     return true;
