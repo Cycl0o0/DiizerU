@@ -11,7 +11,6 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-#[cfg(feature = "deezer")]
 use axum::{
     extract::Query,
     http::header,
@@ -74,10 +73,9 @@ pub async fn revoke(
     State(state): State<AppState>,
     Path(user_id): Path<String>,
 ) -> StatusCode {
-    let _sealed = state.store.revoke_user(&user_id); // tokens dropped from store
+    let _sealed = state.store.revoke_user(&user_id); // token dropped from store
     state.sessions.destroy(&user_id);
-    state.token_cache_evict(&user_id);
-    tracing::warn!(user = %user_id, "user revoked (tokens deleted, session killed)");
+    tracing::warn!(user = %user_id, "user revoked (token deleted, session killed)");
     StatusCode::NO_CONTENT
 }
 
@@ -111,13 +109,11 @@ pub async fn killswitch(
 // Proves the full chain: ARL login -> resolve -> download -> Blowfish decrypt ->
 // decode -> raw PCM s16le. ARL from env DEEZER_ARL.
 //   ffplay -f s16le -ar <X-Sample-Rate> -ch_layout stereo out.raw
-#[cfg(feature = "deezer")]
 #[derive(Deserialize)]
 pub struct DeezerTestQ {
     track: String,
 }
 
-#[cfg(feature = "deezer")]
 pub async fn deezer_test(
     _a: AdminAuth,
     State(state): State<AppState>,

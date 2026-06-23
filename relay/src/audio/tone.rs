@@ -1,7 +1,6 @@
-//! Built-in test AudioSource: a stereo sine tone. Lets the whole HTTP-chunked
-//! PCM pipeline be exercised with curl BEFORE librespot is wired in (milestone
-//! ordering in README/ARCHITECTURE). Default build uses this; enable the
-//! `librespot` feature for real Spotify audio.
+//! Built-in test AudioSource: a stereo sine tone. Lets the HTTP-chunked audio
+//! pipeline be exercised with curl. A session starts on this tone until a track
+//! is played, which swaps in a DeezerSource.
 
 use super::{AudioSource, CHANNELS, SAMPLE_RATE};
 

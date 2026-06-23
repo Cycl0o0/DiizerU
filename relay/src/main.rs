@@ -8,11 +8,9 @@ mod audio;
 mod auth;
 mod config;
 mod crypto;
-#[cfg(feature = "deezer")]
 mod deezer;
 mod error;
 mod model;
-mod proxy;
 mod session;
 mod state;
 mod store;
@@ -72,13 +70,12 @@ async fn main() -> anyhow::Result<()> {
             cfg.max_concurrent_sessions,
             cfg.session_idle_timeout.as_secs() as i64,
         ),
-        token_cache: Arc::new(proxy::TokenCache::new()),
         killswitch,
     };
 
-    // DEV ONLY: seed an allowed user + relay session token so the PCM pipeline
-    // is curl-testable before OAuth is wired to a real Spotify app. Set
-    // DEV_SEED_TOKEN=<token> in .env; NEVER set this in production.
+    // DEV ONLY: seed an allowed user + relay session token so the audio pipeline
+    // is curl-testable without pairing. Set DEV_SEED_TOKEN=<token> in .env;
+    // NEVER set this in production.
     if let Ok(tok) = std::env::var("DEV_SEED_TOKEN") {
         let uid = "dev-user";
         state.store.allow_user(uid);
@@ -87,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
             user_id: uid.to_string(),
             created_at: now_epoch(),
         });
-        tracing::warn!("DEV_SEED_TOKEN active — bearer '{tok}' -> {uid} (tone audio). DO NOT use in prod.");
+        tracing::warn!("DEV_SEED_TOKEN active — bearer '{tok}' -> {uid}. DO NOT use in prod.");
     }
 
     // Background GC: reap idle sessions + expired pairings.

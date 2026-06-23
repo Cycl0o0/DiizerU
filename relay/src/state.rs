@@ -6,7 +6,6 @@ use std::sync::Arc;
 use crate::auth::pairing::PairingManager;
 use crate::config::Config;
 use crate::crypto::Cipher;
-use crate::proxy::TokenCache;
 use crate::session::SessionManager;
 use crate::store::Store;
 
@@ -18,7 +17,6 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub pairing: Arc<PairingManager>,
     pub sessions: SessionManager,
-    pub token_cache: Arc<TokenCache>,
     /// When true: refuse new sessions, tear down existing (kill switch).
     pub killswitch: Arc<AtomicBool>,
 }
@@ -26,8 +24,5 @@ pub struct AppState {
 impl AppState {
     pub fn killswitch_on(&self) -> bool {
         self.killswitch.load(std::sync::atomic::Ordering::Relaxed)
-    }
-    pub fn token_cache_evict(&self, user_id: &str) {
-        self.token_cache.evict(user_id);
     }
 }

@@ -1,12 +1,11 @@
 //! Per-user playback session manager (multi-tenancy).
 //!
-//! - One session per active user, keyed by Spotify user_id.
+//! - One session per active user, keyed by user id.
 //! - Created lazily when the console first needs audio/playback; destroyed after
 //!   `idle_timeout` of inactivity (GC tick).
 //! - `max_concurrent` caps load on the beta VPS (new sessions get Busy).
-//! - Holds the playback state + queue + the live `AudioSource`. In the default
-//!   build the source is the ToneSource; with feature "librespot" it is the
-//!   ring buffer fed by librespot (see audio::librespot_source).
+//! - Holds the playback state + queue + the live `AudioSource` (a tone until a
+//!   track is played, then a DeezerSource).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -38,19 +37,9 @@ impl PlayerSession {
                 error: None,
             },
             queue: Queue::default(),
-            // Default build: tone. librespot feature swaps this for a RingSource
-            // once `attach_librespot` connects (until then it stays a tone so the
-            // pipeline is alive immediately).
+            // Starts as a tone; play_uri swaps in a DeezerSource (api::playback).
             source: Box::new(ToneSource::default()),
-            #[cfg(feature = "librespot")]
-            librespot: None,
         }
-    }
-
-    /// True if a real librespot player is attached (feature build).
-    #[cfg(feature = "librespot")]
-    pub fn has_librespot(&self) -> bool {
-        self.librespot.is_some()
     }
 
     pub fn touch(&mut self, now: i64) {

@@ -30,10 +30,7 @@ pub struct Config {
     pub bind_addr: String,
     /// Public base URL (used in pairing verify_url). e.g. https://your-domain.example
     pub public_base_url: String,
-    pub spotify_client_id: String,
-    pub spotify_client_secret: Option<String>,
-    pub oauth_redirect_uri: String,
-    /// 32-byte master key (base64) for encrypting refresh tokens at rest.
+    /// 32-byte master key (base64) for encrypting the ARL at rest.
     pub master_key: [u8; 32],
     pub admin_token: String,
     pub session_idle_timeout: Duration,
@@ -76,13 +73,7 @@ impl Config {
         Ok(Config {
             mode: mode.clone(),
             bind_addr: env_or("BIND_ADDR", "0.0.0.0:8080"),
-            oauth_redirect_uri: env_or(
-                "OAUTH_REDIRECT_URI",
-                &format!("{public_base_url}/v1/auth/callback"),
-            ),
             public_base_url,
-            spotify_client_id: env_or("SPOTIFY_CLIENT_ID", ""),
-            spotify_client_secret: std::env::var("SPOTIFY_CLIENT_SECRET").ok(),
             master_key,
             admin_token,
             session_idle_timeout: Duration::from_secs(

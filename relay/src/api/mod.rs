@@ -21,7 +21,7 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 /// Extractor: validates `Authorization: Bearer <relay_session_token>` and
-/// yields the authenticated Spotify user_id. NOT a Spotify token.
+/// yields the authenticated user id. NOT a Deezer/ARL token.
 pub struct AuthUser(pub String);
 
 #[async_trait]
@@ -78,9 +78,7 @@ pub fn router(state: AppState) -> Router {
         .route("/pair/start", post(pairing::pair_start))
         .route("/pair/poll", post(pairing::pair_poll))
         .route("/pair", get(pairing::verify_page))
-        .route("/auth/login", get(pairing::auth_login))
-        .route("/auth/paste", post(pairing::auth_paste))
-        .route("/auth/callback", get(pairing::auth_callback))
+        .route("/pair/deezer", post(pairing::deezer_pair))
         // browse
         .route("/search", get(browse::search))
         .route("/browse/playlists", get(browse::playlists))
@@ -99,12 +97,8 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/invite", post(admin::invite))
         .route("/admin/allow/:user_id", put(admin::allow))
         .route("/admin/revoke/:user_id", post(admin::revoke))
-        .route("/admin/killswitch", post(admin::killswitch));
-
-    #[cfg(feature = "deezer")]
-    let v1 = v1
-        .route("/admin/deezer-test", get(admin::deezer_test))
-        .route("/pair/deezer", post(pairing::deezer_pair));
+        .route("/admin/killswitch", post(admin::killswitch))
+        .route("/admin/deezer-test", get(admin::deezer_test));
 
     Router::new()
         .nest("/v1", v1)

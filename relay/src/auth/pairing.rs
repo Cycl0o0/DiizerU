@@ -1,6 +1,6 @@
 //! Device-code pairing state. The console starts a pairing, gets a `user_code`
-//! shown on the TV; the user enters it on the phone, completes Spotify OAuth;
-//! the console polls until a relay session token is issued.
+//! shown on the TV; the user links it on their phone (enters the code + Deezer
+//! ARL); the console polls until a relay session token is issued.
 
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -18,11 +18,8 @@ pub struct PairingRecord {
     pub device_code: String,
     pub user_code: String,
     pub device_name: String,
-    pub pkce_verifier: String,
-    /// random `state` linking the OAuth callback back to this pairing.
-    pub oauth_state: String,
     pub status: PairStatus,
-    /// Invite code the user supplied on the verify page (consumed on callback).
+    /// Invite code the user supplied on the verify page (consumed on link).
     pub invite_code: Option<String>,
     /// Set when approved; the opaque relay session token for the console.
     pub relay_session_token: Option<String>,
@@ -33,7 +30,6 @@ pub struct PairingRecord {
 pub struct PairingManager {
     by_device_code: RwLock<HashMap<String, PairingRecord>>,
     by_user_code: RwLock<HashMap<String, String>>, // user_code -> device_code
-    by_state: RwLock<HashMap<String, String>>,     // oauth_state -> device_code
 }
 
 impl PairingManager {
@@ -46,10 +42,6 @@ impl PairingManager {
             .write()
             .unwrap()
             .insert(rec.user_code.clone(), rec.device_code.clone());
-        self.by_state
-            .write()
-            .unwrap()
-            .insert(rec.oauth_state.clone(), rec.device_code.clone());
         self.by_device_code
             .write()
             .unwrap()
@@ -67,10 +59,6 @@ impl PairingManager {
 
     pub fn device_code_for_user_code(&self, user_code: &str) -> Option<String> {
         self.by_user_code.read().unwrap().get(user_code).cloned()
-    }
-
-    pub fn device_code_for_state(&self, state: &str) -> Option<String> {
-        self.by_state.read().unwrap().get(state).cloned()
     }
 
     pub fn get(&self, device_code: &str) -> Option<PairingRecord> {

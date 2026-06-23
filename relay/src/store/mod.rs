@@ -153,8 +153,8 @@ impl Store {
     // ---- revocation ----
 
     /// Revoke a user: mark revoked, drop their record + all relay sessions.
-    /// Returns the sealed refresh token (if any) so the caller can ask Spotify
-    /// to revoke it upstream.
+    /// Returns the sealed token (if any) for the caller to handle.
+    ///
     pub fn revoke_user(&self, user_id: &str) -> Option<String> {
         let mut g = self.inner.write().unwrap();
         g.allowlist.insert(user_id.to_string(), AllowState::Revoked);

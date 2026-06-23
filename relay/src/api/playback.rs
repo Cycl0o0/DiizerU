@@ -1,9 +1,8 @@
 //! Playback control, queue mutation, and the WS push channel.
 //!
-//! v1 maintains a coherent player state machine + queue per session. Audio in
-//! the default build is the tone source; with feature "librespot" these commands
-//! drive the real librespot Player (see audio::librespot_source outline). The
-//! wire contract is identical either way.
+//! Maintains a player state machine + queue per session. `play_uri` makes the
+//! relay fetch+decrypt+decode the Deezer track and swap it in as the session's
+//! audio source.
 
 use axum::{
     extract::{
@@ -49,7 +48,6 @@ pub async fn command(
 
     // Deezer: on play_uri, fetch+decrypt+decode the track and swap it in as the
     // session's audio source (done before locking — it awaits network/decode).
-    #[cfg(feature = "deezer")]
     if let PlaybackAction::PlayUri = cmd.action {
         if let Some(uri) = &cmd.uri {
             let id = deezer_track_id(uri);
@@ -73,7 +71,6 @@ pub async fn command(
 }
 
 /// Extract a Deezer numeric track id from a uri ("deezer:track:12345" or "12345").
-#[cfg(feature = "deezer")]
 fn deezer_track_id(uri: &str) -> String {
     uri.rsplit(|c| c == ':' || c == '/')
         .next()
@@ -84,7 +81,6 @@ fn deezer_track_id(uri: &str) -> String {
 }
 
 /// Log in to Deezer with the user's stored ARL, download+decrypt+decode a track.
-#[cfg(feature = "deezer")]
 async fn fetch_deezer_pcm(state: &AppState, uid: &str, track_id: &str) -> ApiResult<Vec<f32>> {
     let rec = state.store.get_user(uid).ok_or(ApiError::Unauthorized)?;
     let arl = state
