@@ -84,6 +84,12 @@ generator runs entirely in your browser — the token is never uploaded anywhere
 On the console it's read from `sd:/diizeru/arl.txt` and used to log in directly;
 nothing is sent to any third party. Details in [SECURITY.md](SECURITY.md).
 
+## Known limitations
+
+- **Audio can skip on an unstable or weak network.** Playback needs a steady
+  ~16 KB/s (MP3 128) and only a few seconds of buffer; a Wi-Fi stall drains it
+  and you'll hear a gap. A strong/close signal plays cleanly.
+
 ## The fine print
 
 - It's a hobby project. No SLA, things may break.
