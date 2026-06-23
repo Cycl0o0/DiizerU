@@ -42,6 +42,10 @@ public:
     void add_bytes(size_t n) { bytes_.fetch_add((uint32_t)n); }
     bool adpcm() const { return adpcm_; }
     bool deezer() const { return deezer_; }
+    // Download throttle target. The native path keeps the queue SHALLOW (~1.5s)
+    // and self-paces to playback rate — a deep queue makes the Wii U's SDL audio
+    // drain too fast at the start of a track. The relay path stays server-paced.
+    size_t max_buffered() const { return deezer_ ? (size_t)44100 * 4 * 3 / 2 : (size_t)44100 * 4 * 8; }
     AdpcmDecoder& decoder() { return decoder_; }
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.

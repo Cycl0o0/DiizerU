@@ -26,6 +26,19 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
         return false;
     }
     have_ = have;
+    // Diagnostic: record what the device actually opened vs what we asked for.
+    // A device rate != requested would make playback run fast/slow.
+    std::printf("[audio] want freq=%d ch=%d fmt=%04x | have freq=%d ch=%d fmt=%04x samples=%d\n",
+                fmt.sample_rate, fmt.channels, AUDIO_S16LSB, have.freq, have.channels,
+                have.format, have.samples);
+#ifdef __WIIU__
+    if (FILE* dbg = std::fopen("fs:/vol/external01/diizeru/audio_debug.txt", "w")) {
+        std::fprintf(dbg, "want freq=%d ch=%d fmt=%04x\nhave freq=%d ch=%d fmt=%04x samples=%d\n",
+                     fmt.sample_rate, fmt.channels, AUDIO_S16LSB, have.freq, have.channels,
+                     have.format, have.samples);
+        std::fclose(dbg);
+    }
+#endif
     frame_bytes_ = fmt.channels * fmt.bytes_per_sample;     // s16 stereo = 4
     int pre_ms = fmt.prebuffer_ms > 0 ? fmt.prebuffer_ms : 1000;
     prebuffer_ = (size_t)fmt.sample_rate * frame_bytes_ * pre_ms / 1000; // cushion before play

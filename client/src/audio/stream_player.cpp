@@ -10,20 +10,16 @@
 
 namespace audio {
 
-namespace {
-// Keep up to ~8s of 44.1k stereo s16 buffered, then throttle the download. The
-// relay path stays near real time (server-paced); the native path pulls a finite
-// file over bursty Wi-Fi, so a deep cushion is what rides out the dips.
-constexpr size_t kMaxBufferedBytes = 44100 * 4 * 8;
-} // namespace
+// Throttle target comes from StreamPlayer::max_buffered() (per path).
 
 static size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
     auto* sp = static_cast<StreamPlayer*>(userdata);
     size_t len = size * nmemb;
     if (sp->should_stop()) return 0; // abort transfer
 
-    // Throttle: wait while the backend buffer is full (relay paces ~real time).
-    while (!sp->should_stop() && sp->backend().queued_bytes() > kMaxBufferedBytes) {
+    // Throttle: wait while the backend buffer is full. Keeps the queue shallow so
+    // playback self-paces (native) and memory stays bounded (relay).
+    while (!sp->should_stop() && sp->backend().queued_bytes() > sp->max_buffered()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     if (sp->should_stop()) return 0;
