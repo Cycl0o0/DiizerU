@@ -14,6 +14,10 @@ struct AudioFormat {
     int channels = 2;
     // s16le == 2 bytes/sample
     int bytes_per_sample = 2;
+    // Audio buffered before playback starts. The native (Deezer) path pulls a
+    // finite file over the Wii U's bursty Wi-Fi, so it wants a deeper cushion
+    // than the relay path (which is paced ~real time server-side).
+    int prebuffer_ms = 1000;
 };
 
 class IAudioBackend {

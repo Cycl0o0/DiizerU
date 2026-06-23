@@ -122,6 +122,8 @@ int main(int /*argc*/, char** /*argv*/) {
     audio::SdlAudioBackend backend;
     audio::AudioFormat afmt;
     afmt.sample_rate = native ? 44100 : 22050;
+    // Native path streams a finite file over bursty Wi-Fi -> deeper prebuffer.
+    afmt.prebuffer_ms = native ? 3000 : 1000;
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;

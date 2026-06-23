@@ -27,7 +27,8 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
     }
     have_ = have;
     frame_bytes_ = fmt.channels * fmt.bytes_per_sample;     // s16 stereo = 4
-    prebuffer_ = (size_t)fmt.sample_rate * frame_bytes_; // ~1.0s cushion before play
+    int pre_ms = fmt.prebuffer_ms > 0 ? fmt.prebuffer_ms : 1000;
+    prebuffer_ = (size_t)fmt.sample_rate * frame_bytes_ * pre_ms / 1000; // cushion before play
     rem_len_ = 0;
     started_ = false;
     // Start PAUSED: avoid underruns by filling a cushion before playback begins.

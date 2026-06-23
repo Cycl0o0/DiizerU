@@ -11,9 +11,10 @@
 namespace audio {
 
 namespace {
-// Keep up to ~2s buffered on the backend; throttle the download to that. The
-// relay runs up to ~3s ahead, so this cushion stays full and rides out jitter.
-constexpr size_t kMaxBufferedBytes = 44100 * 2 * 2 * 2;
+// Keep up to ~8s of 44.1k stereo s16 buffered, then throttle the download. The
+// relay path stays near real time (server-paced); the native path pulls a finite
+// file over bursty Wi-Fi, so a deep cushion is what rides out the dips.
+constexpr size_t kMaxBufferedBytes = 44100 * 4 * 8;
 } // namespace
 
 static size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
