@@ -38,6 +38,7 @@ static size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
         if (!sp->backend().queue(bytes, len)) return 0; // backend error -> abort
     }
     sp->add_bytes(len); // count network bytes (real throughput)
+    if (sp->deezer()) sp->log_throughput();
     return len;
 }
 
@@ -74,8 +75,39 @@ void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& t
     dz_.init(track_id);
     mp3dec_init(&mp3_);
     mp3in_.clear();
+    if (tlog_) { std::fclose(tlog_); tlog_ = nullptr; }
+    tlog_t0_ = {};
+    tlog_last_ = {};
+    tlog_last_bytes_ = 0;
     running_.store(true);
     thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
+}
+
+// Append network throughput (avg + instantaneous KB/s) and ring level to SD every
+// ~500ms. Lets us tell network starvation from decode starvation for a real track.
+void StreamPlayer::log_throughput() {
+#ifdef __WIIU__
+    auto now = std::chrono::steady_clock::now();
+    if (tlog_t0_.time_since_epoch().count() == 0) {
+        tlog_t0_ = tlog_last_ = now;
+        tlog_ = std::fopen("fs:/vol/external01/diizeru/audio_throughput.txt", "w");
+        if (tlog_) std::fprintf(tlog_, "ms\tavg_KBps\tinst_KBps\tring_s\n");
+        return;
+    }
+    double since_last = (double)std::chrono::duration_cast<std::chrono::milliseconds>(now - tlog_last_).count();
+    if (since_last < 500.0) return;
+    double elapsed = (double)std::chrono::duration_cast<std::chrono::milliseconds>(now - tlog_t0_).count();
+    unsigned long b = bytes_received();
+    double avg = elapsed > 0 ? (double)b / (elapsed / 1000.0) / 1024.0 : 0.0;
+    double inst = since_last > 0 ? (double)(b - tlog_last_bytes_) / (since_last / 1000.0) / 1024.0 : 0.0;
+    double ring_s = (double)backend_.queued_bytes() / (44100.0 * 4.0);
+    if (tlog_) {
+        std::fprintf(tlog_, "%.0f\t%.1f\t%.1f\t%.2f\n", elapsed, avg, inst, ring_s);
+        std::fflush(tlog_);
+    }
+    tlog_last_ = now;
+    tlog_last_bytes_ = b;
+#endif
 }
 
 // Decrypt the network chunk, then MP3-decode as many whole frames as are
@@ -124,6 +156,7 @@ void StreamPlayer::stop() {
     stop_.store(true);
     if (thread_.joinable()) thread_.join();
     running_.store(false);
+    if (tlog_) { std::fclose(tlog_); tlog_ = nullptr; }
 }
 
 void StreamPlayer::run(std::string url, std::string token) {

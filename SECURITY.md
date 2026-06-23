@@ -1,47 +1,37 @@
 # Security & Privacy
 
-DiizerU is a hobby project. This is the threat model and what the relay does with
-your data. The short version: **self-host if you can** — then nothing sensitive
-ever leaves your machine.
+DiizerU is a hobby project. This is the threat model and what happens with your
+data. The short version: **nothing sensitive ever leaves your devices** — the app
+runs entirely on the console and your token lives only on your SD card.
 
 ## What's sensitive
 
 Your **Deezer ARL** — the session token from your browser cookies. It grants
 access to your Deezer account, so treat it like a password.
 
-## What the relay does with it
+## Where the ARL lives
 
-- **Encrypted at rest.** The ARL is sealed with XChaCha20-Poly1305 before it
-  touches disk. The key (`DIIZERU_MASTER_KEY`) lives in the environment, outside
-  the repo and outside the data store.
-- **Never logged.** No log line prints the ARL, at any level.
-- **Stays server-side.** The console never receives the ARL or any Deezer
-  credential — only an opaque relay session token it uses as a bearer.
-- **Revocable.** `POST /v1/admin/revoke/{user_id}` deletes the stored token and
-  kills the session. `POST /v1/admin/killswitch` stops everything at once.
+- **On your computer / SD card only.** You put the ARL in `sd:/diizeru/arl.txt`.
+  The console reads it from there and logs into Deezer directly. It is never sent
+  to any server of ours — there is no server.
+- **The web config generator runs in your browser.** <https://diizeru.cyclooo.fr>
+  turns your ARL into an `arl.txt` file using client-side JavaScript (a `Blob`
+  download). Nothing is uploaded; the page could be saved and run offline.
+- **Plain text on the SD card.** `arl.txt` is not encrypted on disk — it's a
+  local file on removable media you control, like any other homebrew config.
+  Delete it when you're done if you like; pull the SD card to remove it entirely.
 
-## Transport & access
+## Transport
 
-- TLS on all public endpoints (Caddy/Let's Encrypt in the Docker deploy, or your
-  own reverse proxy).
-- The admin API is behind a separate token (`DIIZERU_ADMIN_TOKEN`), never the
-  user path.
-- Onboarding is open: any account whose Deezer ARL logs in successfully can pair.
-  Access control is after the fact — an operator can revoke any user, which
-  invalidates their relay tokens immediately.
+- The console talks to Deezer over HTTPS (libcurl + mbedTLS, with a bundled
+  CA root set). Your ARL goes only to Deezer, over TLS, exactly as a browser
+  would send its cookie.
 
 ## Privacy
 
-- The only personal data stored is your encrypted ARL and a Deezer user id,
-  needed to key the session and to support revocation.
-- No listening history is persisted beyond the live now-playing state.
-
-## GDPR-ish note
-
-If you run a relay for others, you're the data controller for their encrypted
-ARLs and ids; lawful basis is their consent (they paste their own token), and
-erasure is the revoke endpoint. In **self-hosted** mode there's no third party —
-it's just your own data on your own box.
+- No accounts, no pairing, no telemetry. The app stores nothing about you beyond
+  the `arl.txt` you placed there yourself.
+- No listening history is persisted beyond the live now-playing state in memory.
 
 ## Reporting
 
@@ -50,6 +40,6 @@ Open a GitHub issue. No bug bounty — it's a hobby project.
 ## The honest caveat
 
 DiizerU reaches Deezer over the unofficial streaming path and decrypts your own
-entitled content server-side. That almost certainly breaks Deezer's terms for
+entitled content on the console. That almost certainly breaks Deezer's terms for
 third-party clients. Personal/educational use, your own Premium account, your own
 risk.

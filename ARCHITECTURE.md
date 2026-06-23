@@ -1,47 +1,27 @@
 # Architecture
 
-Two components, one versioned API between them.
+One component: the Wii U client does everything on-device.
 
 ```
-Wii U client (wut + SDL2)            Relay (Rust, axum + tokio)
-  pairing / browse / controls  ─────▶  /v1 REST  ┐
-  ADPCM audio  ◀─────────────────────  /v1/stream ┘
-                                         │
-                                         ▼  ARL (encrypted at rest)
-                                       Deezer: gw-light + media API
-                                       resolve → download → Blowfish
-                                       decrypt → decode → re-encode (ADPCM)
+Wii U client (wut + SDL2)
+  reads sd:/diizeru/arl.txt → logs into Deezer (gw-light + media API)
+  browse / search / controls
+  resolve track → download (HTTPS) → Blowfish stripe-decrypt → MP3 decode → play
 ```
 
-## Why a relay
+## Why on-device
 
-The Wii U can't reasonably do the Deezer streaming path itself (HTTP, TLS, the
-Blowfish stripe-decrypt, MP3/FLAC decoding) and shouldn't hold your credentials.
-The relay does all of that and hands the console a tiny, already-decoded ADPCM
-stream. The console only plays bytes and draws the UI — no credentials, no DRM.
-
-## Relay (`relay/`)
-
-| Module | Job |
-|--------|-----|
-| `api/` | axum routers: pairing, browse/search, playback/queue, the audio stream, admin |
-| `deezer/` | ARL login (`client`), key derivation + Blowfish decrypt (`crypto`), MP3/FLAC decode (`decode`), `AudioSource` (`source`), browse mapping (`proxy`) |
-| `audio/` | `AudioSource` + `StreamEncoder` traits; PCM and IMA-ADPCM encoders |
-| `session/` | one player session per user, idle GC, max-concurrency cap |
-| `store/` | allowlist (for revocation), encrypted token (ARL) store, relay sessions |
-| `auth/pairing` | device-code pairing state |
-
-Audio path: Deezer track → decrypted MP3/FLAC → decoded to 44.1k f32 → IMA ADPCM
-decimated to 22050 Hz stereo (~22 KB/s) → HTTP chunked to the console. ADPCM
-keeps bandwidth tiny, which matters on the Wii U's Wi-Fi. The `StreamEncoder`
-trait leaves room for other formats without touching the client.
+The Wii U is perfectly capable of the Deezer streaming path itself — HTTPS
+(libcurl + mbedTLS), the Blowfish stripe-decrypt, and MP3 decode (minimp3) — so
+there's no reason to hand your credentials to anyone else. The ARL stays on the
+SD card and nothing leaves the console except the requests to Deezer.
 
 ## Client (`client/`)
 
 ```
-core/      relay API client (libcurl + cJSON), models, session store
-audio/     IAudioBackend (SDL2), streaming player, IMA ADPCM decoder
-ui/        pairing screen, browser/player, on-screen keyboard, text, credits
+core/      Deezer client (ARL login, browse, track resolve), models, session store
+audio/     IAudioBackend (SDL2), streaming player, Blowfish stripe-decrypt, MP3 decode
+ui/        browser/player, on-screen keyboard, text, credits
 platform/  wut init, SD, network (nn::ac), input, SDL video
 ```
 
@@ -49,19 +29,27 @@ No business logic in `ui/`; network and track fetches run on worker threads so
 the 60 fps loop never blocks. Bundled assets (font, CA bundle, icon) are embedded
 in the binary — the `.wuhb` content mount isn't reachable via `fopen` on the Wii U.
 
-## The seam (`proto/`)
+## Audio path
 
-The client↔relay API is an OpenAPI spec under `/v1`. The client only ever reads
-its relay URL from config, so the exact same build works against the central
-relay or a self-hosted one — only the URL differs (`RELAY_MODE = central |
-self-hosted` just adjusts onboarding copy and the default public URL). The relay
-is a deployment choice, not a hard dependency.
+Deezer serves the track as MP3 (preferring MP3_128 for the Wii U's bandwidth)
+encrypted with `BF_CBC_STRIPE` — every third 2048-byte block is Blowfish-CBC
+encrypted under a key derived from the track id (MD5 + XOR). The client decrypts
+the stripes (mbedTLS), feeds the MP3 to minimp3, and emits s16 PCM at 44100 Hz to
+an SDL2 audio device (pull/callback model over a ring buffer; SDL converts to the
+AX hardware rate). The console is big-endian PowerPC, so PCM is written as
+explicit little-endian to match the SDL device format.
 
-## Data flow: first launch → playing
+## Configuration
 
-1. Console has no saved session → shows a device code on the TV.
-2. User opens the relay's `/v1/pair` on a phone, enters the code + Deezer ARL.
-3. Relay validates the ARL, stores it encrypted, issues an opaque relay session
-   token to the console.
-4. Console browses (relay proxies Deezer) and plays: `play_uri` makes the relay
-   fetch + decrypt + decode the track and stream it as ADPCM.
+The only config is `sd:/diizeru/arl.txt` — your Deezer ARL. Generate it in the
+browser at <https://diizeru.cyclooo.fr> (nothing is uploaded) or paste it in by
+hand. No pairing, no accounts, no server URL.
+
+## Data flow: launch → playing
+
+1. Boot reads `sd:/diizeru/arl.txt` and logs into Deezer (gw-light `getUserData`
+   for the license token, etc.).
+2. Browse: the client calls Deezer's gw-light + public API directly and maps the
+   results to its models.
+3. Play: resolve the track to an encrypted CDN URL, download it, decrypt the
+   stripes, MP3-decode, and stream PCM to the audio backend.

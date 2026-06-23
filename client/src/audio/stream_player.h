@@ -5,7 +5,9 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <vector>
@@ -51,6 +53,8 @@ public:
     std::vector<uint8_t>& pcm_scratch() { return pcm_scratch_; }
     // Decrypt + MP3-decode a network chunk into the backend. false -> abort.
     bool feed_deezer(const uint8_t* data, size_t len);
+    // Diagnostic: append network throughput + ring level to SD (self-throttled).
+    void log_throughput();
 
 private:
     void run(std::string url, std::string token);
@@ -64,6 +68,11 @@ private:
     DeezerStripeDecryptor dz_;
     mp3dec_t mp3_;
     std::vector<uint8_t> mp3in_; // decrypted, not-yet-decoded MP3 bytes (rolling)
+    // throughput logging (native diagnostic)
+    std::FILE* tlog_ = nullptr;
+    std::chrono::steady_clock::time_point tlog_t0_{};
+    std::chrono::steady_clock::time_point tlog_last_{};
+    unsigned long tlog_last_bytes_ = 0;
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stop_{false};

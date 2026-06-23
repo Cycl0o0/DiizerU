@@ -32,7 +32,6 @@ public:
     void handle_touch(int x, int y); // GamePad touchscreen tap (logical coords)
     void update(float dt_ms); // advance progress / auto-next
     void render(SDL_Renderer* r);
-    bool wants_relink() const { return relink_.load(); }
 
 private:
     enum class RowKind { Menu, Playlist, Album, Track };
@@ -126,8 +125,6 @@ private:
     SDL_Thread* art_thread_ = nullptr;
     std::string art_url_;     // currently loaded
     std::string art_pending_; // worker target
-
-    std::atomic<bool> relink_{false};
 };
 
 } // namespace ui

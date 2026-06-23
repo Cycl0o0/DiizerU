@@ -1,10 +1,10 @@
 # DiizerU
 
-Deezer on the Wii U. It's a homebrew app for the console plus a little relay
-server that does the heavy lifting, so you can sit on the couch and play your own
-Deezer Premium library straight to the TV — search, playlists, the usual
-transport controls, album art, all driven from the GamePad (sticks/buttons or the
-touchscreen, your call).
+Deezer on the Wii U. A homebrew app that logs into Deezer straight from the
+console, decrypts and decodes everything on-device, and plays your own Deezer
+Premium library to the TV — search, playlists, the usual transport controls,
+album art, all driven from the GamePad (sticks/buttons or the touchscreen, your
+call).
 
 It started as a "can I even do this" weekend thing and grew. It works on real
 hardware. It's also a grey-zone hobby project, so please read the
@@ -14,119 +14,84 @@ hardware. It's also a grey-zone hobby project, so please read the
 
 Working right now:
 
-- Pairing from your phone (the console shows a code, you finish on the web)
 - Liked songs, your playlists (private ones too), albums
 - Search with an on-screen keyboard — D-pad or just tap the touchscreen
 - Play/pause that actually resumes where it left off, next/prev, seek, repeat (off/all/one)
 - Now-playing with album art and a progress bar
-- Audio gets decoded on the relay and sent to the console as a tiny ADPCM stream,
-  so the Wii U never touches any DRM and the bandwidth is trivial
+- Everything runs on the console: login, Blowfish stripe-decrypt and MP3 decode
+  all happen on the Wii U. No server in the loop — your token never leaves the
+  SD card.
 
-It's young and a hobby project. Rough edges exist. Nothing here is guaranteed to
-stay up.
+It's young and a hobby project. Rough edges exist.
 
-## Trying it without hosting anything
-
-I run a small public relay. No invite, no waitlist — bring your own Deezer
-Premium account and pair:
-
-```
-Relay:   https://diizeru.cyclooo.fr
-```
-
-What you need:
+## What you need
 
 - A Wii U with Aroma
 - A Deezer Premium account
 
-Then:
+## Setup
 
-1. Download `DiizerU.wuhb` from the [Releases](../../releases) page, drop it in
-   `sd:/wiiu/apps/`.
-2. Launch it. You'll get a code on the TV.
-3. On your phone go to <https://diizeru.cyclooo.fr/v1/pair>, type in the TV code
-   and your Deezer ARL. The page walks you through finding the ARL — it's a cookie
-   in your browser.
-4. That's it, go listen to music.
+1. Download `DiizerU.wuhb` from the [Releases](../../releases) page and drop it
+   in `sd:/wiiu/apps/`.
+2. Get your Deezer ARL into `sd:/diizeru/arl.txt`. Easiest way: open
+   <https://diizeru.cyclooo.fr>, paste your ARL, and download the generated
+   `arl.txt` — it's built entirely in your browser, nothing is uploaded. Copy it
+   to `sd:/diizeru/` on the SD card. The page also walks you through finding the
+   ARL (it's a cookie in your browser).
+3. Launch it and go listen to music.
 
-If handing your ARL to my server makes you uneasy (totally fair), host your own —
-then it never leaves your machine.
+Your ARL is the session token from your Deezer cookies — it grants access to your
+account, so treat it like a password. It only ever lives on your computer and
+your SD card. More in [SECURITY.md](SECURITY.md).
 
-## Hosting your own
+## Building from source
 
-Two pieces: the relay (a single Rust binary) and the client (the `.wuhb`).
-
-You'll want a Linux box — a cheap VPS with a domain, or honestly just something on
-your LAN. Plus Deezer Premium, and the usual toolchains if you're building from
-source (Rust for the relay, devkitPro for the client).
-
-Quickest path is Docker, which also handles TLS via Caddy:
-
-```sh
-git clone https://github.com/Cycl0o0/DiizerU && cd DiizerU/deploy
-cp ../relay/.env.example .env      # edit it, see below
-docker compose up -d --build
-```
-
-The bits of `.env` that matter:
-
-```ini
-RELAY_MODE=self-hosted             # just sets onboarding copy; pairing is open either way
-PUBLIC_BASE_URL=https://your-domain.example
-DIIZERU_MASTER_KEY=...             # head -c32 /dev/urandom | base64  -> encrypts your ARL
-DIIZERU_ADMIN_TOKEN=...            # head -c24 /dev/urandom | base64
-```
-
-Point DNS at the box, bring it up, pair against `https://your-domain.example/v1/pair`.
-Full walkthrough (native install, sitting behind an existing nginx, the build
-flags) is in [docs/SELF-HOST.md](docs/SELF-HOST.md).
-
-For the client:
+You need devkitPro (devkitPPC + wut) and the Wii U SDL2 portlibs.
 
 ```sh
 sudo dkp-pacman -S --needed wiiu-sdl2 wiiu-sdl2_ttf wiiu-sdl2_image wiiu-sdl2_mixer
 cd client && make                  # -> DiizerU.wuhb
 ```
 
-Copy it to `sd:/wiiu/apps/`, and tell it where your relay lives by putting the URL
-in `sd:/diizeru/relay.cfg` (e.g. `https://your-domain.example/v1`), or by changing
-the default in `client/src/main.cpp` before you build.
+Copy the `.wuhb` to `sd:/wiiu/apps/` and drop your `arl.txt` in `sd:/diizeru/`.
 
 ## How it fits together
 
 ```
-Wii U (wut + SDL2) ──pairing/REST──▶ Relay (Rust / axum)
-       ▲                                  │ logs in with your ARL (stored encrypted)
-       │ ◀──── ADPCM audio stream ────────┤ Deezer: resolve → download →
-       └────────── controls ───────────────┘ decrypt → decode → re-encode
+Wii U (wut + SDL2)
+  │ reads your ARL from sd:/diizeru/arl.txt, logs into Deezer
+  ▼
+Deezer:  resolve track  →  download over HTTPS (libcurl)
+                        →  Blowfish stripe-decrypt (mbedTLS)
+                        →  MP3 decode (minimp3)
+                        →  play (SDL2 → AX)
 ```
 
-The console holds no credentials and decrypts nothing — it plays a light stream
-and draws the UI. The client/relay API is versioned in [proto/](proto), so the
-exact same client works against my relay or yours; only the URL changes. More in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+No relay, no middleman: the console does the whole job and holds the only copy of
+your token (on the SD card). More in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Controls
 
 Sticks/D-pad to move, A opens or plays, B goes back. Y is play/pause, L/R skip
-tracks, D-pad left/right seeks ten seconds, minus cycles the repeat mode, X
-re-links the account. Or ignore all that and poke the touchscreen — keys, rows,
-the scrub bar and play/pause all respond to taps.
+tracks, D-pad left/right seeks ten seconds, minus cycles the repeat mode, plus
+shows the credits. Or ignore all that and poke the touchscreen — keys, rows, the
+scrub bar and play/pause all respond to taps.
 
 ## Security, briefly
 
-Your ARL is encrypted at rest (XChaCha20-Poly1305, key kept out of the repo) and
-never written to logs. Everything public is over TLS. The admin API sits behind a
-separate token, and there's a kill switch plus per-user revocation. Details in
-[SECURITY.md](SECURITY.md). Still — hosting it yourself is the safest option.
+Your ARL lives only on your computer and the SD card. The website's config
+generator runs entirely in your browser — the token is never uploaded anywhere.
+On the console it's read from `sd:/diizeru/arl.txt` and used to log in directly;
+nothing is sent to any third party. Details in [SECURITY.md](SECURITY.md).
 
 ## The fine print
 
 - It's a hobby project. No SLA, things may break.
 - Your own Deezer Premium account only. No sharing accounts.
-- It reaches Deezer the unofficial way, which almost certainly breaks Deezer's
-  terms for third-party apps. Personal/educational use, your own account, your own
-  risk. You're responsible for what you do with it.
+- It reaches Deezer the unofficial way and decrypts your own entitled content on
+  the console, which almost certainly breaks Deezer's terms for third-party apps.
+  Personal/educational use, your own account, your own risk. You're responsible
+  for what you do with it.
 - Not affiliated with Deezer or Nintendo. The names belong to them.
 
 ## License

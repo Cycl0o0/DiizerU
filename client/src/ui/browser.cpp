@@ -112,7 +112,6 @@ void Browser::handle_button(Uint8 b) {
         case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: prev_track(); return;
         case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: next_track(true); return;
         case SDL_CONTROLLER_BUTTON_BACK: cycle_repeat(); return; // minus
-        case SDL_CONTROLLER_BUTTON_X: relink_.store(true); return;
         case SDL_CONTROLLER_BUTTON_DPAD_LEFT: if (has_track_) { do_seek(-10000); return; } break;
         case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: if (has_track_) { do_seek(10000); return; } break;
         default: break;
@@ -457,7 +456,7 @@ void Browser::render(SDL_Renderer* r) {
         fill(r, kMuted, px, py, pw, 5);
         fill(r, kAccent, px, py, (int)(pw * frac), 5);
     } else {
-        text_.draw(r, "A play   Y pause   L/R skip   (-) repeat   (+) credits   X re-link",
+        text_.draw(r, "A play   Y pause   L/R skip   (-) repeat   (+) credits",
                    40, by + 40, kMuted, Size::Small);
     }
     if (credits_active_) render_credits(r);

@@ -212,17 +212,6 @@ int main(int /*argc*/, char** /*argv*/) {
             browser->update((float)(now - last_ticks));
             last_ticks = now;
             browser->render(v.renderer);
-            // Re-link only applies to relay mode (native uses the SD-stored ARL).
-            if (browser->wants_relink() && !native) {
-                streamer.stop();
-                backend.clear();
-                store.clear_token();
-                relay->set_bearer("");
-                browser.reset();
-                pairing = std::make_unique<ui::PairingScreen>(*relay, store, text);
-                pairing->start();
-                mode = Mode::Pairing;
-            }
         }
     }
 
