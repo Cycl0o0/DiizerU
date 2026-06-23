@@ -47,9 +47,12 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
 
     SDL_AudioSpec want{};
     want.freq = fmt.sample_rate;
-    want.format = AUDIO_S16LSB; // s16le
+    // Native path uses the device-native byte order so SDL inserts NO conversion
+    // on the audio thread (Wii U AX is big-endian S16MSB == AUDIO_S16SYS there);
+    // the producer feeds native-endian samples. Relay path stays s16le.
+    want.format = fmt.native ? AUDIO_S16SYS : AUDIO_S16LSB;
     want.channels = (Uint8)fmt.channels;
-    want.samples = 2048;        // callback period (~46ms @22050, ~46ms @44100)
+    want.samples = 2048;        // callback period (~46ms @44100)
     want.callback = &SdlAudioBackend::audio_cb;
     want.userdata = this;
 
@@ -64,7 +67,7 @@ bool SdlAudioBackend::init(const AudioFormat& fmt) {
     }
     have_ = have;
     std::printf("[audio] want freq=%d ch=%d fmt=%04x | have freq=%d ch=%d fmt=%04x samples=%d\n",
-                fmt.sample_rate, fmt.channels, AUDIO_S16LSB, have.freq, have.channels,
+                fmt.sample_rate, fmt.channels, want.format, have.freq, have.channels,
                 have.format, have.samples);
 
     int pre_ms = fmt.prebuffer_ms > 0 ? fmt.prebuffer_ms : 500;

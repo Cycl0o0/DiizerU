@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -55,9 +56,9 @@ void run_audio_selftest(audio::SdlAudioBackend& b, int rate) {
     for (int i = 0; i < rate * secs; ++i) {
         double s = std::sin(2.0 * 3.14159265358979 * 440.0 * (double)i / (double)rate) * 0.25;
         short v = (short)(s * 32767.0);
-        uint8_t lo = (uint8_t)(v & 0xff), hi = (uint8_t)((v >> 8) & 0xff);
-        buf.push_back(lo); buf.push_back(hi); // L (s16le; backend swaps for the device)
-        buf.push_back(lo); buf.push_back(hi); // R
+        uint8_t b[2]; std::memcpy(b, &v, sizeof(v)); // native byte order (AUDIO_S16SYS)
+        buf.push_back(b[0]); buf.push_back(b[1]); // L
+        buf.push_back(b[0]); buf.push_back(b[1]); // R
     }
     std::printf("[selftest] playing %ds 440Hz tone @%dHz (%zu bytes)\n",
                 secs, rate, buf.size());
@@ -164,6 +165,7 @@ int main(int /*argc*/, char** /*argv*/) {
     audio::AudioFormat afmt;
     afmt.sample_rate = native ? 44100 : 22050;
     afmt.prebuffer_ms = native ? 3000 : 1000;
+    afmt.native = native; // native: device-native s16 byte order, zero SDL conversion
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;

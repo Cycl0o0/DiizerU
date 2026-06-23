@@ -5,6 +5,7 @@
 #include <chrono>
 
 #ifdef __WIIU__
+#include <coreinit/thread.h>
 #include "cacert_pem.h"
 #endif
 
@@ -38,7 +39,6 @@ static size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
         if (!sp->backend().queue(bytes, len)) return 0; // backend error -> abort
     }
     sp->add_bytes(len); // count network bytes (real throughput)
-    if (sp->deezer()) sp->log_throughput();
     return len;
 }
 
@@ -75,39 +75,8 @@ void StreamPlayer::start_deezer(const std::string& cdn_url, const std::string& t
     dz_.init(track_id);
     mp3dec_init(&mp3_);
     mp3in_.clear();
-    if (tlog_) { std::fclose(tlog_); tlog_ = nullptr; }
-    tlog_t0_ = {};
-    tlog_last_ = {};
-    tlog_last_bytes_ = 0;
     running_.store(true);
     thread_ = std::thread(&StreamPlayer::run, this, cdn_url, std::string());
-}
-
-// Append network throughput (avg + instantaneous KB/s) and ring level to SD every
-// ~500ms. Lets us tell network starvation from decode starvation for a real track.
-void StreamPlayer::log_throughput() {
-#ifdef __WIIU__
-    auto now = std::chrono::steady_clock::now();
-    if (tlog_t0_.time_since_epoch().count() == 0) {
-        tlog_t0_ = tlog_last_ = now;
-        tlog_ = std::fopen("fs:/vol/external01/diizeru/audio_throughput.txt", "w");
-        if (tlog_) std::fprintf(tlog_, "ms\tavg_KBps\tinst_KBps\tring_s\n");
-        return;
-    }
-    double since_last = (double)std::chrono::duration_cast<std::chrono::milliseconds>(now - tlog_last_).count();
-    if (since_last < 500.0) return;
-    double elapsed = (double)std::chrono::duration_cast<std::chrono::milliseconds>(now - tlog_t0_).count();
-    unsigned long b = bytes_received();
-    double avg = elapsed > 0 ? (double)b / (elapsed / 1000.0) / 1024.0 : 0.0;
-    double inst = since_last > 0 ? (double)(b - tlog_last_bytes_) / (since_last / 1000.0) / 1024.0 : 0.0;
-    double ring_s = (double)backend_.queued_bytes() / (44100.0 * 4.0);
-    if (tlog_) {
-        std::fprintf(tlog_, "%.0f\t%.1f\t%.1f\t%.2f\n", elapsed, avg, inst, ring_s);
-        std::fflush(tlog_);
-    }
-    tlog_last_ = now;
-    tlog_last_bytes_ = b;
-#endif
 }
 
 // Decrypt the network chunk, then MP3-decode as many whole frames as are
@@ -124,29 +93,32 @@ bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
             &mp3_, mp3in_.data() + pos, (int)(mp3in_.size() - pos), pcm, &info);
         if (info.frame_bytes == 0) break; // need more data
         pos += (size_t)info.frame_bytes;
-        if (samples <= 0) continue; // header/skip frame
-        // Emit interleaved s16 *little-endian* at the native 44100 Hz + upmix mono
-        // -> stereo. minimp3 returns native-endian shorts; the Wii U is big-endian
-        // and the backend expects s16le, so write the bytes explicitly. No rate
-        // conversion here: the pull-model backend drains at real time, so full
-        // 44100 plays at correct speed (SDL upsamples to the AX rate on demand).
-        const int ch = info.channels;
-        out.clear();
-        out.reserve((size_t)samples * 4);
-        for (int i = 0; i < samples; ++i) {
-            short L = (ch == 2) ? pcm[i * 2] : pcm[i];
-            short R = (ch == 2) ? pcm[i * 2 + 1] : pcm[i];
-            out.push_back((uint8_t)(L & 0xff)); out.push_back((uint8_t)((L >> 8) & 0xff));
-            out.push_back((uint8_t)(R & 0xff)); out.push_back((uint8_t)((R >> 8) & 0xff));
+        if (samples <= 0) continue; // header/skip frame; `samples` is per channel
+        // minimp3 returns native-endian interleaved shorts. The native device is
+        // opened AUDIO_S16SYS (platform-native byte order), so the samples go out
+        // as-is: stereo passes straight through (no packing), mono is upmixed to
+        // stereo. No byte-swap and no SDL conversion on the audio thread — that
+        // hidden per-period conversion was the deadline miss behind the skips.
+        const uint8_t* pcm_bytes;
+        size_t nbytes;
+        if (info.channels == 2) {
+            pcm_bytes = reinterpret_cast<const uint8_t*>(pcm);
+            nbytes = (size_t)samples * 2 * sizeof(short); // samples * 2ch * 2 bytes
+        } else {
+            out.resize((size_t)samples * 2 * sizeof(short));
+            int16_t* o = reinterpret_cast<int16_t*>(out.data());
+            for (int i = 0; i < samples; ++i) { o[i * 2] = pcm[i]; o[i * 2 + 1] = pcm[i]; }
+            pcm_bytes = out.data();
+            nbytes = out.size();
         }
         // Backpressure: one curl chunk decodes to many seconds of audio, but the
-        // ring drains at real time. Wait for room before queueing each frame so we
-        // never overflow the ring (this also throttles curl -> TCP, pacing the
-        // whole pipeline to real time without a separate clock).
-        while (!should_stop() && backend_.queued_bytes() + out.size() > max_buffered())
+        // ring drains at real time. Wait for room before queueing so we never
+        // overflow the ring (this also throttles curl -> TCP, pacing the whole
+        // pipeline to real time without a separate clock).
+        while (!should_stop() && backend_.queued_bytes() + nbytes > max_buffered())
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         if (should_stop()) return false;
-        if (!out.empty() && !backend_.queue(out.data(), out.size())) return false;
+        if (nbytes && !backend_.queue(pcm_bytes, nbytes)) return false;
     }
     if (pos > 0) mp3in_.erase(mp3in_.begin(), mp3in_.begin() + pos);
     return true;
@@ -156,10 +128,15 @@ void StreamPlayer::stop() {
     stop_.store(true);
     if (thread_.joinable()) thread_.join();
     running_.store(false);
-    if (tlog_) { std::fclose(tlog_); tlog_ = nullptr; }
 }
 
 void StreamPlayer::run(std::string url, std::string token) {
+#ifdef __WIIU__
+    // Keep the network + decrypt + MP3 decode burst off the AX audio core (CPU1)
+    // so it can never preempt the audio callback (that preemption was causing
+    // skips even with a full ring). CPU2 is otherwise idle for homebrew.
+    OSSetThreadAffinity(OSGetCurrentThread(), OS_THREAD_ATTRIB_AFFINITY_CPU2);
+#endif
     CURL* c = curl_easy_init();
     if (!c) {
         error_ = "curl init failed";

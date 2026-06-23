@@ -18,6 +18,12 @@ struct AudioFormat {
     // finite file over the Wii U's bursty Wi-Fi, so it wants a deeper cushion
     // than the relay path (which is paced ~real time server-side).
     int prebuffer_ms = 1000;
+    // Native (Deezer) path: open the device in the platform-native s16 byte order
+    // (AUDIO_S16SYS) and feed native-endian samples, so SDL inserts NO per-period
+    // conversion on the audio thread (the Wii U AX device is big-endian S16MSB; a
+    // hidden byte-swap on the callback was missing its deadline -> skips). The
+    // relay path stays s16le (false).
+    bool native = false;
 };
 
 class IAudioBackend {
