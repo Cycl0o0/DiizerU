@@ -9,9 +9,11 @@
 #include <SDL2/SDL.h>
 #include <curl/curl.h>
 
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "audio/sdl_audio_backend.h"
 #include "audio/stream_player.h"
@@ -40,6 +42,31 @@ void fill(SDL_Renderer* r, SDL_Color c, int x, int y, int w, int h) {
     SDL_SetRenderDrawColor(r, c.r, c.g, c.b, c.a);
     SDL_Rect rect{x, y, w, h};
     SDL_RenderFillRect(r, &rect);
+}
+
+// Audio self-test: play a known 3s 440Hz sine through the real backend. A steady
+// low A tone for ~3s == backend + clock are correct (so a "fast" track is a
+// decode/data problem); a short high-pitched chirp == the backend/governor is
+// playing faster than real time. Gated on the file sd:/diizeru/selftest.
+void run_audio_selftest(audio::SdlAudioBackend& b, int rate) {
+    const int secs = 3;
+    std::vector<uint8_t> buf;
+    buf.reserve((size_t)rate * secs * 4);
+    for (int i = 0; i < rate * secs; ++i) {
+        double s = std::sin(2.0 * 3.14159265358979 * 440.0 * (double)i / (double)rate) * 0.25;
+        short v = (short)(s * 32767.0);
+        uint8_t lo = (uint8_t)(v & 0xff), hi = (uint8_t)((v >> 8) & 0xff);
+        buf.push_back(lo); buf.push_back(hi); // L (s16le; backend swaps for the device)
+        buf.push_back(lo); buf.push_back(hi); // R
+    }
+    std::printf("[selftest] playing %ds 440Hz tone @%dHz (%zu bytes)\n",
+                secs, rate, buf.size());
+    b.clear();
+    b.pause(false);
+    b.queue(buf.data(), buf.size());
+    SDL_Delay((Uint32)(secs + 1) * 1000);
+    b.clear();
+    std::printf("[selftest] done\n");
 }
 
 } // namespace
@@ -127,6 +154,17 @@ int main(int /*argc*/, char** /*argv*/) {
     bool audio_ready = backend.init(afmt);
     audio::StreamPlayer streamer(backend);
     (void)audio_ready;
+
+    // Diagnostic: if sd:/diizeru/selftest exists, play a known tone first so we can
+    // tell a backend/clock fault from a decode/data fault by ear.
+#ifdef __WIIU__
+    if (audio_ready) {
+        if (FILE* f = std::fopen("fs:/vol/external01/diizeru/selftest", "r")) {
+            std::fclose(f);
+            run_audio_selftest(backend, afmt.sample_rate);
+        }
+    }
+#endif
 
     std::unique_ptr<ui::Browser> browser;
     if (mode == Mode::Home) {
