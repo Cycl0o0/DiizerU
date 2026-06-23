@@ -87,26 +87,34 @@ bool StreamPlayer::feed_deezer(const uint8_t* data, size_t len) {
     dz_.feed(data, len, mp3in_); // append decrypted bytes to the rolling buffer
     size_t pos = 0;
     short pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
-    std::vector<int16_t> stereo;
+    auto& out = pcm_scratch_; // reused byte buffer
     while (mp3in_.size() - pos > 0) {
         mp3dec_frame_info_t info;
+        // `samples` is per channel; pcm holds samples*channels interleaved shorts.
         int samples = mp3dec_decode_frame(
             &mp3_, mp3in_.data() + pos, (int)(mp3in_.size() - pos), pcm, &info);
         if (info.frame_bytes == 0) break; // need more data
         pos += (size_t)info.frame_bytes;
         if (samples <= 0) continue; // header/skip frame
+        // Emit interleaved s16 *little-endian* + upmix mono -> stereo. minimp3
+        // returns native-endian shorts; the Wii U is big-endian and the backend
+        // expects s16le (AUDIO_S16LSB), so write the bytes explicitly.
+        out.clear();
+        out.resize((size_t)samples * 2 /*stereo*/ * 2 /*bytes*/);
+        size_t o = 0;
         if (info.channels == 2) {
-            if (!backend_.queue(reinterpret_cast<const uint8_t*>(pcm),
-                                (size_t)samples * 2 * sizeof(int16_t)))
-                return false;
+            for (int i = 0; i < samples * 2; ++i) {
+                out[o++] = (uint8_t)(pcm[i] & 0xff);
+                out[o++] = (uint8_t)((pcm[i] >> 8) & 0xff);
+            }
         } else {
-            // upmix mono -> stereo
-            stereo.resize((size_t)samples * 2);
-            for (int i = 0; i < samples; ++i) { stereo[i * 2] = pcm[i]; stereo[i * 2 + 1] = pcm[i]; }
-            if (!backend_.queue(reinterpret_cast<const uint8_t*>(stereo.data()),
-                                stereo.size() * sizeof(int16_t)))
-                return false;
+            for (int i = 0; i < samples; ++i) {
+                uint8_t lo = (uint8_t)(pcm[i] & 0xff), hi = (uint8_t)((pcm[i] >> 8) & 0xff);
+                out[o++] = lo; out[o++] = hi; // L
+                out[o++] = lo; out[o++] = hi; // R
+            }
         }
+        if (!backend_.queue(out.data(), o)) return false;
     }
     if (pos > 0) mp3in_.erase(mp3in_.begin(), mp3in_.begin() + pos);
     return true;
